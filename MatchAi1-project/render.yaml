@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: matchai1
+    runtime: node
+    region: frankfurt
+    buildCommand: npm install -g pnpm && pnpm install && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/football-analytics run build
+    startCommand: node --enable-source-maps ./artifacts/api-server/dist/index.mjs
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: BASE_PATH
+        value: /
+      - key: DATABASE_URL
+        sync: false
