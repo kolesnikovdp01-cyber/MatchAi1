@@ -1,0 +1,567 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Football analytics API specification
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: ai-predictions
+    description: AI-generated match predictions
+  - name: author-predictions
+    description: Author/expert match predictions
+  - name: statistics
+    description: Prediction statistics
+  - name: matches
+    description: Match data
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /ai-predictions:
+    get:
+      operationId: listAiPredictions
+      tags: [ai-predictions]
+      summary: List AI predictions
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, win, lose, refund]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of AI predictions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiPrediction"
+
+  /ai-predictions/{id}:
+    get:
+      operationId: getAiPrediction
+      tags: [ai-predictions]
+      summary: Get single AI prediction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: AI prediction details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiPrediction"
+        "404":
+          description: Not found
+
+  /author-predictions:
+    get:
+      operationId: listAuthorPredictions
+      tags: [author-predictions]
+      summary: List author predictions
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, win, lose, refund]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of author predictions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AuthorPrediction"
+    post:
+      operationId: createAuthorPrediction
+      tags: [author-predictions]
+      summary: Create author prediction (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAuthorPredictionBody"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorPrediction"
+
+  /author-predictions/{id}:
+    get:
+      operationId: getAuthorPrediction
+      tags: [author-predictions]
+      summary: Get single author prediction
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Author prediction details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorPrediction"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateAuthorPrediction
+      tags: [author-predictions]
+      summary: Update author prediction status
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdatePredictionStatusBody"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorPrediction"
+        "404":
+          description: Not found
+
+  /statistics/summary:
+    get:
+      operationId: getStatisticsSummary
+      tags: [statistics]
+      summary: Get overall prediction statistics
+      responses:
+        "200":
+          description: Statistics summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StatisticsSummary"
+
+  /statistics/monthly:
+    get:
+      operationId: getMonthlyStatistics
+      tags: [statistics]
+      summary: Get monthly prediction statistics
+      responses:
+        "200":
+          description: Monthly statistics
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MonthlyStats"
+
+  /history:
+    get:
+      operationId: listHistory
+      tags: [ai-predictions]
+      summary: List all prediction history
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [ai, author]
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, win, lose, refund]
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: Prediction history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/HistoryEntry"
+
+  /matches/upcoming:
+    get:
+      operationId: listUpcomingMatches
+      tags: [matches]
+      summary: List upcoming matches
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+      responses:
+        "200":
+          description: Upcoming matches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Match"
+
+  /dashboard:
+    get:
+      operationId: getDashboard
+      tags: [statistics]
+      summary: Get dashboard summary data
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    AiPrediction:
+      type: object
+      properties:
+        id:
+          type: integer
+        matchTitle:
+          type: string
+        league:
+          type: string
+        homeTeam:
+          type: string
+        awayTeam:
+          type: string
+        prediction:
+          type: string
+        confidence:
+          type: number
+        odds:
+          type: number
+        status:
+          type: string
+          enum: [pending, win, lose, refund]
+        matchDate:
+          type: string
+          format: date-time
+        analysis:
+          type: string
+        scorePredict:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - matchTitle
+        - league
+        - homeTeam
+        - awayTeam
+        - prediction
+        - confidence
+        - odds
+        - status
+        - matchDate
+        - analysis
+        - createdAt
+
+    AuthorPrediction:
+      type: object
+      properties:
+        id:
+          type: integer
+        matchTitle:
+          type: string
+        league:
+          type: string
+        homeTeam:
+          type: string
+        awayTeam:
+          type: string
+        prediction:
+          type: string
+        odds:
+          type: number
+        stake:
+          type: integer
+        status:
+          type: string
+          enum: [pending, win, lose, refund]
+        matchDate:
+          type: string
+          format: date-time
+        reasoning:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - matchTitle
+        - league
+        - homeTeam
+        - awayTeam
+        - prediction
+        - odds
+        - stake
+        - status
+        - matchDate
+        - reasoning
+        - createdAt
+
+    CreateAuthorPredictionBody:
+      type: object
+      properties:
+        matchTitle:
+          type: string
+        league:
+          type: string
+        homeTeam:
+          type: string
+        awayTeam:
+          type: string
+        prediction:
+          type: string
+        odds:
+          type: number
+        stake:
+          type: integer
+        matchDate:
+          type: string
+          format: date-time
+        reasoning:
+          type: string
+      required:
+        - matchTitle
+        - league
+        - homeTeam
+        - awayTeam
+        - prediction
+        - odds
+        - stake
+        - matchDate
+        - reasoning
+
+    UpdatePredictionStatusBody:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [pending, win, lose, refund]
+      required:
+        - status
+
+    StatisticsSummary:
+      type: object
+      properties:
+        totalPredictions:
+          type: integer
+        wins:
+          type: integer
+        losses:
+          type: integer
+        refunds:
+          type: integer
+        pending:
+          type: integer
+        winRate:
+          type: number
+        aiWinRate:
+          type: number
+        authorWinRate:
+          type: number
+        averageOdds:
+          type: number
+        roi:
+          type: number
+      required:
+        - totalPredictions
+        - wins
+        - losses
+        - refunds
+        - pending
+        - winRate
+        - aiWinRate
+        - authorWinRate
+        - averageOdds
+        - roi
+
+    MonthlyStats:
+      type: object
+      properties:
+        month:
+          type: string
+        totalPredictions:
+          type: integer
+        wins:
+          type: integer
+        losses:
+          type: integer
+        winRate:
+          type: number
+      required:
+        - month
+        - totalPredictions
+        - wins
+        - losses
+        - winRate
+
+    HistoryEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum: [ai, author]
+        matchTitle:
+          type: string
+        league:
+          type: string
+        prediction:
+          type: string
+        odds:
+          type: number
+        status:
+          type: string
+          enum: [pending, win, lose, refund]
+        matchDate:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - type
+        - matchTitle
+        - league
+        - prediction
+        - odds
+        - status
+        - matchDate
+        - createdAt
+
+    Match:
+      type: object
+      properties:
+        id:
+          type: integer
+        homeTeam:
+          type: string
+        awayTeam:
+          type: string
+        league:
+          type: string
+        matchDate:
+          type: string
+          format: date-time
+        homeOdds:
+          type: number
+        drawOdds:
+          type: number
+        awayOdds:
+          type: number
+      required:
+        - id
+        - homeTeam
+        - awayTeam
+        - league
+        - matchDate
+        - homeOdds
+        - drawOdds
+        - awayOdds
+
+    DashboardSummary:
+      type: object
+      properties:
+        todayMatches:
+          type: integer
+        activePredictions:
+          type: integer
+        overallWinRate:
+          type: number
+        recentStreak:
+          type: integer
+        totalProfit:
+          type: number
+        recentPredictions:
+          type: array
+          items:
+            $ref: "#/components/schemas/HistoryEntry"
+      required:
+        - todayMatches
+        - activePredictions
+        - overallWinRate
+        - recentStreak
+        - totalProfit
+        - recentPredictions
