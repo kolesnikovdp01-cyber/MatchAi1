@@ -2,9 +2,10 @@ services:
   - type: web
     name: matchai1
     runtime: node
-    region: frankfurt
-    buildCommand: npm install -g pnpm && pnpm install && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/football-analytics run build
+    nodeVersion: 22.x
+    buildCommand: npm install -g pnpm@10 && pnpm install --frozen-lockfile=false && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/football-analytics run build
     startCommand: node --enable-source-maps ./artifacts/api-server/dist/index.mjs
+    healthCheckPath: /api/healthz
     envVars:
       - key: NODE_ENV
         value: production
