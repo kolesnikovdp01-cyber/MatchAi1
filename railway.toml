@@ -1,6 +1,6 @@
 [build]
   builder = "nixpacks"
-  buildCommand = "cd MatchAi1-project && corepack enable && corepack prepare pnpm@10 --activate && pnpm install --no-frozen-lockfile && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/football-analytics run build"
+  buildCommand = "cd MatchAi1-project && pnpm install --no-frozen-lockfile && pnpm --filter @workspace/api-server run build && BASE_PATH=/ pnpm --filter @workspace/football-analytics run build"
 
   [deploy]
   startCommand = "cd MatchAi1-project && node --enable-source-maps ./artifacts/api-server/dist/index.mjs"
