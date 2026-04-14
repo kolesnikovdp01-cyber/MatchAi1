@@ -17,20 +17,20 @@ import usersRouter from "./users";
 
 const router: IRouter = Router();
 
-router.use(healthRouter);
-router.use(aiPredictionsRouter);
-router.use(authorPredictionsRouter);
-router.use(statisticsRouter);
-router.use(historyRouter);
-router.use(matchesRouter);
-router.use(dashboardRouter);
-router.use(buttonsRouter);
+router.use("/health", healthRouter);
+router.use("/ai-predictions", aiPredictionsRouter);
+router.use("/author-predictions", authorPredictionsRouter);
+router.use("/statistics", statisticsRouter);
+router.use("/history", historyRouter);
+router.use("/matches", matchesRouter);
+router.use("/dashboard", dashboardRouter);
+router.use("/buttons", buttonsRouter);
 router.use("/admins", adminsRouter);
-router.use(generatePredictionRouter);
-router.use(liveOddsRouter);
-router.use(statsAdminRouter);
-router.use(adsRouter);
-router.use(storageRouter);
-router.use(usersRouter);
+router.use("/generate-prediction", generatePredictionRouter);
+router.use("/live-odds", liveOddsRouter);
+router.use("/stats-admin", statsAdminRouter);
+router.use("/ads", adsRouter);
+router.use("/storage", storageRouter);
+router.use("/users", usersRouter);
 
 export default router;
