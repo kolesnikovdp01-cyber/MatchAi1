@@ -72072,6 +72072,10 @@ async function searchTeam(name) {
   const key = `search_team:${name.toLowerCase().replace(/\s+/g, "_")}`;
   return getOrFetch(key, "team_search", 24 * 7, () => apiGet(`/teams?search=${encodeURIComponent(name)}`));
 }
+async function fetchOdds(fixtureId) {
+  const key = `odds:${fixtureId}`;
+  return getOrFetch(key, "odds", 1, () => apiGet(`/odds?fixture=${fixtureId}`));
+}
 async function fetchStatsForMatch(homeTeam, awayTeam, leagueHint, fixtureId) {
   const parts = [];
   let homeTeamId;
@@ -72223,6 +72227,47 @@ ${lines.join("\n")}`);
         console.warn("[stats] away form error:", e2.message);
       }
     }
+    if (resolvedFixtureId) {
+      try {
+        const oddsData = await fetchOdds(resolvedFixtureId);
+        if (oddsData.length > 0) {
+          const bookmaker = oddsData[0];
+          const bets = bookmaker?.bookmakers?.[0]?.bets ?? bookmaker?.bets ?? [];
+          const oddsLines = [];
+          for (const bet of bets) {
+            const name = bet.name ?? "";
+            const vals = bet.values ?? [];
+            if (/match winner/i.test(name) || /1x2/i.test(name)) {
+              const h2 = vals.find((v2) => v2.value === "Home")?.odd;
+              const d2 = vals.find((v2) => v2.value === "Draw")?.odd;
+              const a2 = vals.find((v2) => v2.value === "Away")?.odd;
+              if (h2 && d2 && a2) oddsLines.push(`  \u041F1/X/\u041F2: ${h2} / ${d2} / ${a2}`);
+            } else if (/goals over\/under/i.test(name) || /total goals/i.test(name)) {
+              const o25 = vals.find((v2) => v2.value === "Over 2.5")?.odd;
+              const u25 = vals.find((v2) => v2.value === "Under 2.5")?.odd;
+              const o15 = vals.find((v2) => v2.value === "Over 1.5")?.odd;
+              const u15 = vals.find((v2) => v2.value === "Under 1.5")?.odd;
+              if (o25 && u25) oddsLines.push(`  \u0422\u0411/\u0422\u041C 2.5 \u0433\u043E\u043B\u043E\u0432: ${o25} / ${u25}`);
+              if (o15 && u15) oddsLines.push(`  \u0422\u0411/\u0422\u041C 1.5 \u0433\u043E\u043B\u043E\u0432: ${o15} / ${u15}`);
+            } else if (/both teams score/i.test(name)) {
+              const yes = vals.find((v2) => v2.value === "Yes")?.odd;
+              const no = vals.find((v2) => v2.value === "No")?.odd;
+              if (yes && no) oddsLines.push(`  \u041E\u0417 \u0414\u0430/\u041D\u0435\u0442: ${yes} / ${no}`);
+            } else if (/corners/i.test(name)) {
+              const o95 = vals.find((v2) => v2.value === "Over 9.5")?.odd;
+              const u95 = vals.find((v2) => v2.value === "Under 9.5")?.odd;
+              if (o95 && u95) oddsLines.push(`  \u0423\u0433\u043B\u043E\u0432\u044B\u0435 \u0422\u0411/\u0422\u041C 9.5: ${o95} / ${u95}`);
+            }
+          }
+          if (oddsLines.length > 0) {
+            parts.push(`\u{1F4B0} \u041A\u043E\u044D\u0444\u0444\u0438\u0446\u0438\u0435\u043D\u0442\u044B \u0431\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u043E\u0432:
+${oddsLines.join("\n")}`);
+          }
+        }
+      } catch (e2) {
+        console.warn("[stats] odds error:", e2.message);
+      }
+    }
     if (leagueId && TOP_LEAGUES.includes(leagueId)) {
       try {
         const standings = await fetchStandings(leagueId);
@@ -72300,7 +72345,10 @@ var SYSTEM_PROMPT = `\u0422\u044B \u2014 \u044D\u043B\u0438\u0442\u043D\u044B\u0
 1. \u0418\u0437\u0443\u0447\u0438 H2H: \u0438\u0449\u0438 \u043F\u0430\u0442\u0442\u0435\u0440\u043D \u0432 4\u20135 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0445 \u0432\u0441\u0442\u0440\u0435\u0447\u0430\u0445
 2. \u0418\u0437\u0443\u0447\u0438 \u0444\u043E\u0440\u043C\u0443: \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 5\u20138 \u043C\u0430\u0442\u0447\u0435\u0439 \u043A\u0430\u0436\u0434\u043E\u0439 \u043A\u043E\u043C\u0430\u043D\u0434\u044B
 3. \u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0438 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0443 \u0441\u0435\u0437\u043E\u043D\u0430: \u0433\u043E\u043B\u044B, \u0443\u0433\u043B\u043E\u0432\u044B\u0435, \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438
-4. \u0412\u044B\u0431\u0435\u0440\u0438 \u0440\u044B\u043D\u043E\u043A, \u0433\u0434\u0435 \u043F\u0430\u0442\u0442\u0435\u0440\u043D \u043D\u0430\u0438\u0431\u043E\u043B\u0435\u0435 \u043E\u0447\u0435\u0432\u0438\u0434\u0435\u043D
+4. \u0418\u0437\u0443\u0447\u0438 \u043A\u043E\u044D\u0444\u0444\u0438\u0446\u0438\u0435\u043D\u0442\u044B \u0431\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u043E\u0432 (\u0435\u0441\u043B\u0438 \u0435\u0441\u0442\u044C): \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0438\u0445 \u043A\u0430\u043A \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435 \u043F\u0430\u0442\u0442\u0435\u0440\u043D\u0430.
+   \u041D\u0438\u0437\u043A\u0438\u0439 \u043A\u043E\u044D\u0444\u0444\u0438\u0446\u0438\u0435\u043D\u0442 (1.40\u20131.65) = \u0431\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u044B \u0443\u0432\u0435\u0440\u0435\u043D\u044B. \u0412\u044B\u0441\u043E\u043A\u0438\u0439 (2.0+) = \u0440\u0438\u0441\u043A.
+   \u041D\u0415 \u043A\u043E\u043F\u0438\u0440\u0443\u0439 \u043A\u043E\u044D\u0444\u0444\u0438\u0446\u0438\u0435\u043D\u0442 \u0438\u0437 \u0434\u0430\u043D\u043D\u044B\u0445 \u2014 \u0443\u043A\u0430\u0437\u044B\u0432\u0430\u0439 \u0441\u0432\u043E\u0439 \u0447\u0435\u0441\u0442\u043D\u044B\u0439 \u0440\u0430\u0441\u0447\u0451\u0442.
+5. \u0412\u044B\u0431\u0435\u0440\u0438 \u0440\u044B\u043D\u043E\u043A, \u0433\u0434\u0435 \u043F\u0430\u0442\u0442\u0435\u0440\u043D + \u043A\u043E\u044D\u0444\u0444\u0438\u0446\u0438\u0435\u043D\u0442 \u0441\u043E\u0432\u043F\u0430\u0434\u0430\u044E\u0442 \u0438 \u0434\u0430\u044E\u0442 \u043C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u0443\u044E \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C
 
 \u2550\u2550\u2550 \u0417\u0410\u041F\u0420\u0415\u0429\u0401\u041D\u041D\u042B\u0415 \u0420\u042B\u041D\u041A\u0418 \u2550\u2550\u2550
 \u274C \xAB\u041F1\xBB / \xAB\u041F2\xBB / \u043F\u043E\u0431\u0435\u0434\u0430 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \u2014 \u0417\u0410\u041F\u0420\u0415\u0429\u0415\u041D\u041E
