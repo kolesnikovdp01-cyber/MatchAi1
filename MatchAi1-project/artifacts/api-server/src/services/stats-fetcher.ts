@@ -7,6 +7,12 @@ const DAILY_LIMIT = 90; // free plan: 100/day, we stay at 90 for safety
 
 let SEASON = 2025;
 
+// Mapping of European cup IDs → don't use these for team season stats
+const EUROPEAN_CUP_IDS = new Set([2, 3, 848, 4, 5, 6]);
+
+// Domestic league map: team ID → domestic league ID (populated as we discover teams)
+const teamDomesticLeague = new Map<number, number>();
+
 export async function detectActiveSeason(): Promise<number> {
   try {
     const url = `https://${HOST}/leagues?id=39&current=true`;
@@ -59,7 +65,6 @@ async function apiGet(path: string): Promise<any> {
   if (apiAccessBlocked) throw new Error("API access blocked (403). Check APISPORTS_KEY.");
   if (!(await canMakeRequest())) throw new Error("Daily API limit reached");
 
-  // Per-minute rate limiting: free plan = 10 req/min, we use 1 per 7s (~8/min)
   const now = Date.now();
   const wait = API_RATE_DELAY_MS - (now - lastApiCallAt);
   if (wait > 0) {
@@ -114,7 +119,6 @@ async function getOrFetch(key: string, type: string, ttlHours: number, fetcher: 
 export async function fetchTodayFixtures(leagueId?: number): Promise<any[]> {
   const today = new Date().toISOString().slice(0, 10);
   const leagueFilter = leagueId ? `&league=${leagueId}&season=${SEASON}` : "";
-  // Cache today's fixtures for 30 minutes
   const key = `fixtures:date:${today}${leagueId ? `:${leagueId}` : ""}`;
   return getOrFetch(key, "fixtures", 0.5, () => apiGet(`/fixtures?date=${today}${leagueFilter}`));
 }
@@ -148,15 +152,17 @@ export async function fetchFixtureById(fixtureId: number): Promise<any> {
   });
 }
 
-export async function fetchFixtureStats(fixtureId: number): Promise<any[]> {
-  const key = `fixture_stats:${fixtureId}`;
-  return getOrFetch(key, "fixture_stats", 12, () => apiGet(`/fixtures/statistics?fixture=${fixtureId}`));
-}
-
 export async function fetchTeamLastFixtures(teamId: number, leagueId: number, last = 10): Promise<any[]> {
-  const key = `team_fixtures:${teamId}:${leagueId}:last${last}`;
+  const key = `team_fixtures:${teamId}:${leagueId}:last${last}:${SEASON}`;
   return getOrFetch(key, "team_fixtures", 6, () =>
     apiGet(`/fixtures?team=${teamId}&league=${leagueId}&season=${SEASON}&last=${last}&status=FT`)
+  );
+}
+
+export async function fetchTeamLastFixturesAny(teamId: number, last = 8): Promise<any[]> {
+  const key = `team_fixtures_any:${teamId}:last${last}:${SEASON}`;
+  return getOrFetch(key, "team_fixtures_any", 6, () =>
+    apiGet(`/fixtures?team=${teamId}&season=${SEASON}&last=${last}&status=FT`)
   );
 }
 
@@ -170,9 +176,60 @@ export async function fetchOdds(fixtureId: number): Promise<any[]> {
   return getOrFetch(key, "odds", 1, () => apiGet(`/odds?fixture=${fixtureId}`));
 }
 
-export async function fetchEvents(fixtureId: number): Promise<any[]> {
-  const key = `events:${fixtureId}`;
-  return getOrFetch(key, "events", 1, () => apiGet(`/fixtures/events?fixture=${fixtureId}`));
+// ─── Discover team's domestic league ─────────────────────────────────────────
+
+async function getTeamDomesticLeague(teamId: number): Promise<number> {
+  if (teamDomesticLeague.has(teamId)) return teamDomesticLeague.get(teamId)!;
+
+  try {
+    const key = `team_leagues:${teamId}:${SEASON}`;
+    const cached = await getCached(key, 24 * 30);
+    if (cached) {
+      teamDomesticLeague.set(teamId, cached);
+      return cached;
+    }
+
+    const data = await apiGet(`/teams/statistics?team=${teamId}&season=${SEASON}`);
+    // The response is an object (not array), so check if it has league info
+    if (data && !Array.isArray(data) && data.league?.id) {
+      const lgId = data.league.id;
+      if (!EUROPEAN_CUP_IDS.has(lgId)) {
+        teamDomesticLeague.set(teamId, lgId);
+        await setCached(key, "team_domestic_league", lgId);
+        return lgId;
+      }
+    }
+
+    // Try fetching league list for this team
+    const leaguesList = await apiGet(`/leagues?team=${teamId}&season=${SEASON}&type=League`);
+    const domesticLeagues = leaguesList.filter((l: any) =>
+      !EUROPEAN_CUP_IDS.has(l.league?.id) && TOP_LEAGUES.includes(l.league?.id)
+    );
+    if (domesticLeagues.length > 0) {
+      const lgId = domesticLeagues[0].league?.id;
+      teamDomesticLeague.set(teamId, lgId);
+      await setCached(key, "team_domestic_league", lgId);
+      return lgId;
+    }
+  } catch { }
+
+  return 39; // fallback
+}
+
+// ─── Format match result line ─────────────────────────────────────────────────
+
+function fmtMatch(m: any, teamId: number, label: string): string {
+  const isHome = m.teams?.home?.id === teamId;
+  const hg = m.goals?.home ?? "?";
+  const ag = m.goals?.away ?? "?";
+  const myGoals = isHome ? hg : ag;
+  const oppGoals = isHome ? ag : hg;
+  const opp = isHome ? m.teams?.away?.name : m.teams?.home?.name;
+  const d = m.fixture?.date ? new Date(m.fixture.date).toLocaleDateString("ru-RU") : "?";
+  const totalGoals = (typeof hg === "number" && typeof ag === "number") ? hg + ag : null;
+  const btts = typeof hg === "number" && typeof ag === "number" && hg > 0 && ag > 0 ? "ОЗ✓" : "";
+  const result = myGoals > oppGoals ? "W" : myGoals < oppGoals ? "L" : "D";
+  return `  ${d} [${isHome ? "Д" : "Г"}][${result}] vs ${opp}: ${myGoals}:${oppGoals}${totalGoals !== null ? ` (ΣG=${totalGoals})` : ""}${btts ? " "+btts : ""}`;
 }
 
 // ─── Main: fetch rich stats for AI generation ─────────────────────────────────
@@ -201,145 +258,177 @@ export async function fetchStatsForMatch(
   const usageBefore = await getTodayUsage();
 
   try {
-    // 1. Resolve teams (sequential to respect per-minute rate limit)
-    const homeResults = await searchTeam(homeTeam);
-    const awayResults = await searchTeam(awayTeam);
+    // 1. Resolve teams
+    const [homeResults, awayResults] = await Promise.all([
+      searchTeam(homeTeam),
+      searchTeam(awayTeam),
+    ]);
 
     const home = (homeResults ?? [])[0];
     const away = (awayResults ?? [])[0];
     homeTeamId = home?.team?.id;
     awayTeamId = away?.team?.id;
 
-    // 2. Try to find the fixture in top leagues
+    // 2. Determine league from hint
+    const leagueMap: Record<string, number> = {
+      "premier league": 39, "английская премьер": 39, "epl": 39,
+      "la liga": 140, "испания": 140, "примера": 140,
+      "bundesliga": 78, "германия": 78, "бундес": 78,
+      "serie a": 135, "италия": 135, "серия а": 135,
+      "ligue 1": 61, "франция": 61, "лига 1": 61,
+      "champions league": 2, "лч": 2, "лига чемпионов": 2, "лига чемпіонів": 2, "cl": 2,
+      "europa league": 3, "лига европы": 3, "лига європи": 3,
+    };
+    const hint = (leagueHint ?? "").toLowerCase();
+    for (const [k, v] of Object.entries(leagueMap)) {
+      if (hint.includes(k)) { leagueId = v; break; }
+    }
+
+    // 3. Try to find the fixture to get exact league
     if (homeTeamId && awayTeamId && !resolvedFixtureId) {
-      const today = new Date().toISOString().slice(0, 10);
-      const tomorrow = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
-      const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
       try {
+        const today = new Date().toISOString().slice(0, 10);
+        const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
         const fixtures = await fetchFixturesByDateRange(today, nextWeek);
         const found = fixtures.find((f: any) =>
           (f.teams?.home?.id === homeTeamId && f.teams?.away?.id === awayTeamId) ||
-          (f.teams?.home?.name?.toLowerCase().includes(homeTeam.toLowerCase().split(" ")[0]) &&
-           f.teams?.away?.name?.toLowerCase().includes(awayTeam.toLowerCase().split(" ")[0]))
+          (f.teams?.away?.id === homeTeamId && f.teams?.home?.id === awayTeamId)
         );
         if (found) {
           resolvedFixtureId = found.fixture?.id;
-          leagueId = found.league?.id;
+          const fixtureLeagueId = found.league?.id;
+          if (!leagueId) leagueId = fixtureLeagueId;
           const dateStr = found.fixture?.date ? new Date(found.fixture.date).toLocaleString("ru-RU", { timeZone: "Europe/Kiev" }) : "?";
-          parts.push(`📅 Матч: ${found.teams?.home?.name} vs ${found.teams?.away?.name} | ${found.league?.name} | ${dateStr} (КВ)`);
+          parts.push(`📅 ${found.teams?.home?.name} vs ${found.teams?.away?.name} | ${found.league?.name} | ${dateStr} Киев`);
         }
       } catch (e: any) {
         console.warn("[stats] fixture lookup error:", e.message);
       }
     }
 
-    // 3. Determine league
-    if (!leagueId && homeTeamId) {
-      leagueId = home?.statistics?.[0]?.league?.id;
+    // 4. Determine DOMESTIC league for stats (even if match is in CL/EL)
+    let statsLeagueHome = leagueId;
+    let statsLeagueAway = leagueId;
+
+    if (homeTeamId && (!statsLeagueHome || EUROPEAN_CUP_IDS.has(statsLeagueHome))) {
+      statsLeagueHome = await getTeamDomesticLeague(homeTeamId);
     }
-    if (!leagueId) {
-      // Try to match league hint to known leagues
-      const leagueMap: Record<string, number> = {
-        "premier league": 39, "английская премьер": 39,
-        "la liga": 140, "испания": 140,
-        "bundesliga": 78, "германия": 78,
-        "serie a": 135, "италия": 135,
-        "ligue 1": 61, "франция": 61,
-        "champions league": 2, "лч": 2, "лига чемпионов": 2,
-      };
-      const hint = (leagueHint ?? "").toLowerCase();
-      for (const [k, v] of Object.entries(leagueMap)) {
-        if (hint.includes(k)) { leagueId = v; break; }
-      }
-      if (!leagueId) leagueId = 39; // fallback Premier League
+    if (awayTeamId && (!statsLeagueAway || EUROPEAN_CUP_IDS.has(statsLeagueAway))) {
+      statsLeagueAway = await getTeamDomesticLeague(awayTeamId);
     }
 
-    // 4. Fetch H2H
+    if (!leagueId) leagueId = statsLeagueHome ?? 39;
+
+    // 5. H2H (all competitions)
     if (homeTeamId && awayTeamId) {
       try {
         const h2h = await fetchH2H(homeTeamId, awayTeamId);
         if (h2h.length > 0) {
           const recent = h2h.slice(0, 8);
+          const totalGoalsList = recent.map((m: any) => {
+            const hg = m.goals?.home;
+            const ag = m.goals?.away;
+            return typeof hg === "number" && typeof ag === "number" ? hg + ag : null;
+          }).filter(x => x !== null) as number[];
+          const avgGoals = totalGoalsList.length > 0 ? (totalGoalsList.reduce((a, b) => a + b, 0) / totalGoalsList.length).toFixed(1) : "?";
+          const over25 = totalGoalsList.filter(g => g > 2.5).length;
+          const btts = recent.filter((m: any) => (m.goals?.home ?? 0) > 0 && (m.goals?.away ?? 0) > 0).length;
+
           const h2hLines = recent.map((m: any) => {
             const hg = m.goals?.home ?? "?";
             const ag = m.goals?.away ?? "?";
             const d = m.fixture?.date ? new Date(m.fixture.date).toLocaleDateString("ru-RU") : "?";
-            return `  ${d}: ${m.teams?.home?.name} ${hg}:${ag} ${m.teams?.away?.name}`;
+            const total = typeof hg === "number" && typeof ag === "number" ? `ΣG=${hg+ag}` : "";
+            return `  ${d}: ${m.teams?.home?.name} ${hg}:${ag} ${m.teams?.away?.name} ${total}`;
           });
-          parts.push(`⚔️ H2H (последние ${recent.length} встреч):\n${h2hLines.join("\n")}`);
+          parts.push(`⚔️ H2H (последние ${recent.length} встреч) | Ср.голов: ${avgGoals} | ТБ2.5: ${over25}/${recent.length} | ОЗ: ${btts}/${recent.length}:\n${h2hLines.join("\n")}`);
         }
       } catch (e: any) { console.warn("[stats] H2H error:", e.message); }
     }
 
-    // 5. Fetch team stats (season)
-    if (homeTeamId && leagueId) {
+    // 6. Home team season stats (use domestic league)
+    if (homeTeamId && statsLeagueHome) {
       try {
-        const s = await fetchTeamStats(homeTeamId, leagueId);
-        if (s) {
+        const s = await fetchTeamStats(homeTeamId, statsLeagueHome);
+        if (s && s.fixtures) {
           const f = s.fixtures ?? {};
           const g = s.goals ?? {};
-          const cards = s.cards ?? {};
+          const played = f.played?.total ?? 0;
+          const goalsFor = g.for?.total?.total ?? 0;
+          const goalsAgainst = g.against?.total?.total ?? 0;
+          const avgFor = played > 0 ? (goalsFor / played).toFixed(2) : "?";
+          const avgAgainst = played > 0 ? (goalsAgainst / played).toFixed(2) : "?";
           const cornerFor = s.corners?.for?.average?.total ?? "?";
           const cornerAgainst = s.corners?.against?.average?.total ?? "?";
-          const yellowTotal = Object.values(cards.yellow ?? {}).reduce((a: any, b: any) => a + (b?.total ?? 0), 0);
-          parts.push(`📊 ${homeTeam} (сезон ${SEASON}): ${f.wins?.total ?? "?"}П/${f.draws?.total ?? "?"}Н/${f.loses?.total ?? "?"}П | Голы: ${g.for?.total?.total ?? "?"} забито / ${g.against?.total?.total ?? "?"} пропущено | Ср.угл за: ${cornerFor} / против: ${cornerAgainst} | ЖК всего: ${yellowTotal}`);
+          const cleanSheets = f.wins?.home ?? 0;
+          const failedToScore = s.goals?.for?.minute?.["0-15"]?.total !== undefined ? "данные есть" : "?";
+          const leagueName = s.league?.name ?? `League ${statsLeagueHome}`;
+          parts.push(`📊 ${homeTeam} сезон ${SEASON} [${leagueName}]: ${f.wins?.total ?? "?"}П/${f.draws?.total ?? "?"}Н/${f.loses?.total ?? "?"}Пр (из ${played}) | Голы: ${goalsFor}±${goalsAgainst} (${avgFor}/${avgAgainst} за матч) | Угл: ${cornerFor}/${cornerAgainst}`);
         }
-      } catch (e: any) { console.warn("[stats] home team stats error:", e.message); }
+      } catch (e: any) { console.warn("[stats] home stats error:", e.message); }
     }
 
-    if (awayTeamId && leagueId) {
+    // 7. Away team season stats (use domestic league)
+    if (awayTeamId && statsLeagueAway) {
       try {
-        const s = await fetchTeamStats(awayTeamId, leagueId);
-        if (s) {
+        const s = await fetchTeamStats(awayTeamId, statsLeagueAway);
+        if (s && s.fixtures) {
           const f = s.fixtures ?? {};
           const g = s.goals ?? {};
-          const cards = s.cards ?? {};
+          const played = f.played?.total ?? 0;
+          const goalsFor = g.for?.total?.total ?? 0;
+          const goalsAgainst = g.against?.total?.total ?? 0;
+          const avgFor = played > 0 ? (goalsFor / played).toFixed(2) : "?";
+          const avgAgainst = played > 0 ? (goalsAgainst / played).toFixed(2) : "?";
           const cornerFor = s.corners?.for?.average?.total ?? "?";
           const cornerAgainst = s.corners?.against?.average?.total ?? "?";
-          const yellowTotal = Object.values(cards.yellow ?? {}).reduce((a: any, b: any) => a + (b?.total ?? 0), 0);
-          parts.push(`📊 ${awayTeam} (сезон ${SEASON}): ${f.wins?.total ?? "?"}П/${f.draws?.total ?? "?"}Н/${f.loses?.total ?? "?"}П | Голы: ${g.for?.total?.total ?? "?"} забито / ${g.against?.total?.total ?? "?"} пропущено | Ср.угл за: ${cornerFor} / против: ${cornerAgainst} | ЖК всего: ${yellowTotal}`);
+          const leagueName = s.league?.name ?? `League ${statsLeagueAway}`;
+          parts.push(`📊 ${awayTeam} сезон ${SEASON} [${leagueName}]: ${f.wins?.total ?? "?"}П/${f.draws?.total ?? "?"}Н/${f.loses?.total ?? "?"}Пр (из ${played}) | Голы: ${goalsFor}±${goalsAgainst} (${avgFor}/${avgAgainst} за матч) | Угл: ${cornerFor}/${cornerAgainst}`);
         }
-      } catch (e: any) { console.warn("[stats] away team stats error:", e.message); }
+      } catch (e: any) { console.warn("[stats] away stats error:", e.message); }
     }
 
-    // 6. Last 5 matches form
-    if (homeTeamId && leagueId) {
+    // 8. Home team recent form (any competition = more data)
+    if (homeTeamId) {
       try {
-        const fixtures = await fetchTeamLastFixtures(homeTeamId, leagueId, 8);
+        let fixtures = homeTeamId && statsLeagueHome ? await fetchTeamLastFixtures(homeTeamId, statsLeagueHome, 8) : [];
+        if (fixtures.length < 3 && homeTeamId) {
+          fixtures = await fetchTeamLastFixturesAny(homeTeamId, 8);
+        }
         if (fixtures.length > 0) {
-          const lines = fixtures.slice(0, 8).map((m: any) => {
-            const isHome = m.teams?.home?.id === homeTeamId;
-            const hg = m.goals?.home ?? "?";
-            const ag = m.goals?.away ?? "?";
-            const opp = isHome ? m.teams?.away?.name : m.teams?.home?.name;
-            const result = isHome ? `${hg}:${ag}` : `${ag}:${hg}`;
-            const d = m.fixture?.date ? new Date(m.fixture.date).toLocaleDateString("ru-RU") : "?";
-            return `  ${d} ${isHome ? "Д" : "Г"} vs ${opp}: ${result}`;
-          });
-          parts.push(`🔥 Форма ${homeTeam} (последние матчи):\n${lines.join("\n")}`);
+          const lines = fixtures.slice(0, 8).map((m: any) => fmtMatch(m, homeTeamId!, homeTeam));
+          const totalGoals = fixtures.slice(0, 8).map((m: any) => {
+            const hg = m.goals?.home; const ag = m.goals?.away;
+            return typeof hg === "number" && typeof ag === "number" ? hg + ag : null;
+          }).filter(x => x !== null) as number[];
+          const avgG = totalGoals.length > 0 ? (totalGoals.reduce((a,b)=>a+b,0)/totalGoals.length).toFixed(1) : "?";
+          const over25c = totalGoals.filter(g=>g>2.5).length;
+          parts.push(`🔥 Форма ${homeTeam} (посл. ${fixtures.length} матчей) | Ср.голов: ${avgG} | ТБ2.5: ${over25c}/${totalGoals.length}:\n${lines.join("\n")}`);
         }
       } catch (e: any) { console.warn("[stats] home form error:", e.message); }
     }
 
-    if (awayTeamId && leagueId) {
+    // 9. Away team recent form
+    if (awayTeamId) {
       try {
-        const fixtures = await fetchTeamLastFixtures(awayTeamId, leagueId, 8);
+        let fixtures = awayTeamId && statsLeagueAway ? await fetchTeamLastFixtures(awayTeamId, statsLeagueAway, 8) : [];
+        if (fixtures.length < 3 && awayTeamId) {
+          fixtures = await fetchTeamLastFixturesAny(awayTeamId, 8);
+        }
         if (fixtures.length > 0) {
-          const lines = fixtures.slice(0, 8).map((m: any) => {
-            const isAway = m.teams?.away?.id === awayTeamId;
-            const hg = m.goals?.home ?? "?";
-            const ag = m.goals?.away ?? "?";
-            const opp = isAway ? m.teams?.home?.name : m.teams?.away?.name;
-            const result = isAway ? `${ag}:${hg}` : `${hg}:${ag}`;
-            const d = m.fixture?.date ? new Date(m.fixture.date).toLocaleDateString("ru-RU") : "?";
-            return `  ${d} ${isAway ? "Г" : "Д"} vs ${opp}: ${result}`;
-          });
-          parts.push(`🔥 Форма ${awayTeam} (последние матчи):\n${lines.join("\n")}`);
+          const lines = fixtures.slice(0, 8).map((m: any) => fmtMatch(m, awayTeamId!, awayTeam));
+          const totalGoals = fixtures.slice(0, 8).map((m: any) => {
+            const hg = m.goals?.home; const ag = m.goals?.away;
+            return typeof hg === "number" && typeof ag === "number" ? hg + ag : null;
+          }).filter(x => x !== null) as number[];
+          const avgG = totalGoals.length > 0 ? (totalGoals.reduce((a,b)=>a+b,0)/totalGoals.length).toFixed(1) : "?";
+          const over25c = totalGoals.filter(g=>g>2.5).length;
+          parts.push(`🔥 Форма ${awayTeam} (посл. ${fixtures.length} матчей) | Ср.голов: ${avgG} | ТБ2.5: ${over25c}/${totalGoals.length}:\n${lines.join("\n")}`);
         }
       } catch (e: any) { console.warn("[stats] away form error:", e.message); }
     }
 
-    // 7. Bookmaker odds (if fixtureId is known)
+    // 10. Bookmaker odds
     if (resolvedFixtureId) {
       try {
         const oddsData = await fetchOdds(resolvedFixtureId);
@@ -354,14 +443,14 @@ export async function fetchStatsForMatch(
               const h = vals.find((v: any) => v.value === "Home")?.odd;
               const d = vals.find((v: any) => v.value === "Draw")?.odd;
               const a = vals.find((v: any) => v.value === "Away")?.odd;
-              if (h && d && a) oddsLines.push(`  П1/X/П2: ${h} / ${d} / ${a}`);
+              if (h && d && a) oddsLines.push(`  1/X/2: ${h} / ${d} / ${a}`);
             } else if (/goals over\/under/i.test(name) || /total goals/i.test(name)) {
               const o25 = vals.find((v: any) => v.value === "Over 2.5")?.odd;
               const u25 = vals.find((v: any) => v.value === "Under 2.5")?.odd;
               const o15 = vals.find((v: any) => v.value === "Over 1.5")?.odd;
               const u15 = vals.find((v: any) => v.value === "Under 1.5")?.odd;
-              if (o25 && u25) oddsLines.push(`  ТБ/ТМ 2.5 голов: ${o25} / ${u25}`);
-              if (o15 && u15) oddsLines.push(`  ТБ/ТМ 1.5 голов: ${o15} / ${u15}`);
+              if (o25 && u25) oddsLines.push(`  ТБ2.5/ТМ2.5: ${o25} / ${u25}`);
+              if (o15 && u15) oddsLines.push(`  ТБ1.5/ТМ1.5: ${o15} / ${u15}`);
             } else if (/both teams score/i.test(name)) {
               const yes = vals.find((v: any) => v.value === "Yes")?.odd;
               const no = vals.find((v: any) => v.value === "No")?.odd;
@@ -369,28 +458,29 @@ export async function fetchStatsForMatch(
             } else if (/corners/i.test(name)) {
               const o95 = vals.find((v: any) => v.value === "Over 9.5")?.odd;
               const u95 = vals.find((v: any) => v.value === "Under 9.5")?.odd;
-              if (o95 && u95) oddsLines.push(`  Угловые ТБ/ТМ 9.5: ${o95} / ${u95}`);
+              if (o95 && u95) oddsLines.push(`  Угловые ТБ9.5/ТМ9.5: ${o95} / ${u95}`);
             }
           }
           if (oddsLines.length > 0) {
-            parts.push(`💰 Коэффициенты букмекеров:\n${oddsLines.join("\n")}`);
+            parts.push(`💰 Букмекеры:\n${oddsLines.join("\n")}`);
           }
         }
       } catch (e: any) { console.warn("[stats] odds error:", e.message); }
     }
 
-    // 8. Standings position
-    if (leagueId && TOP_LEAGUES.includes(leagueId)) {
+    // 11. Standings (domestic league)
+    const standingsLeague = statsLeagueHome ?? leagueId;
+    if (standingsLeague && !EUROPEAN_CUP_IDS.has(standingsLeague)) {
       try {
-        const standings = await fetchStandings(leagueId);
+        const standings = await fetchStandings(standingsLeague);
         const allTeams: any[] = (standings[0]?.league?.standings ?? []).flat();
         const homeSt = allTeams.find((t: any) => t.team?.id === homeTeamId);
         const awaySt = allTeams.find((t: any) => t.team?.id === awayTeamId);
         if (homeSt || awaySt) {
           const leagueName = standings[0]?.league?.name ?? "Лига";
           parts.push(`📋 Таблица ${leagueName}:`);
-          if (homeSt) parts.push(`  ${homeTeam}: ${homeSt.rank}-е место, ${homeSt.points} очков, форма: ${homeSt.form ?? "—"}, голы: ${homeSt.goals?.for ?? "?"} / ${homeSt.goals?.against ?? "?"}`);
-          if (awaySt) parts.push(`  ${awayTeam}: ${awaySt.rank}-е место, ${awaySt.points} очков, форма: ${awaySt.form ?? "—"}, голы: ${awaySt.goals?.for ?? "?"} / ${awaySt.goals?.against ?? "?"}`);
+          if (homeSt) parts.push(`  ${homeTeam}: #${homeSt.rank}, ${homeSt.points} очков, форма: ${homeSt.form ?? "—"}, Г±ПГ: ${homeSt.goals?.for ?? "?"}/${homeSt.goals?.against ?? "?"}`);
+          if (awaySt) parts.push(`  ${awayTeam}: #${awaySt.rank}, ${awaySt.points} очков, форма: ${awaySt.form ?? "—"}, Г±ПГ: ${awaySt.goals?.for ?? "?"}/${awaySt.goals?.against ?? "?"}`);
         }
       } catch (e: any) { console.warn("[stats] standings error:", e.message); }
     }
@@ -402,7 +492,7 @@ export async function fetchStatsForMatch(
 
   const usageAfter = await getTodayUsage();
   const requestsUsed = usageAfter - usageBefore;
-  parts.push(`\n[API-Football: использовано ${usageAfter}/${DAILY_LIMIT} запросов сегодня, из них для этого матча: ${requestsUsed}]`);
+  parts.push(`\n[API использовано: ${usageAfter}/${DAILY_LIMIT} сегодня, для этого матча: ${requestsUsed}]`);
 
   return {
     fixtureId: resolvedFixtureId,
@@ -427,8 +517,6 @@ export async function getCachedStatsCount(): Promise<number> {
   const rows = await db.select({ id: statsCacheTable.id }).from(statsCacheTable);
   return rows.length;
 }
-
-// ─── Startup: light warmup (detect season only, no heavy fetching) ─────────────
 
 export async function startupFetch(): Promise<void> {
   if (!API_KEY) { console.warn("[stats] APISPORTS_KEY not set, skipping startup fetch"); return; }

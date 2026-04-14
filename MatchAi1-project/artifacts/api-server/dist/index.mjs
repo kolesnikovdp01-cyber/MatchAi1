@@ -71960,6 +71960,8 @@ var API_KEY = process.env.APISPORTS_KEY ?? "";
 var HOST = "v3.football.api-sports.io";
 var DAILY_LIMIT = 90;
 var SEASON = 2025;
+var EUROPEAN_CUP_IDS = /* @__PURE__ */ new Set([2, 3, 848, 4, 5, 6]);
+var teamDomesticLeague = /* @__PURE__ */ new Map();
 async function detectActiveSeason() {
   try {
     const url2 = `https://${HOST}/leagues?id=39&current=true`;
@@ -72060,12 +72062,21 @@ async function fetchH2H(team1, team2) {
   return getOrFetch(key, "h2h", 12, () => apiGet(`/fixtures/headtohead?h2h=${team1}-${team2}&last=10`));
 }
 async function fetchTeamLastFixtures(teamId, leagueId, last = 10) {
-  const key = `team_fixtures:${teamId}:${leagueId}:last${last}`;
+  const key = `team_fixtures:${teamId}:${leagueId}:last${last}:${SEASON}`;
   return getOrFetch(
     key,
     "team_fixtures",
     6,
     () => apiGet(`/fixtures?team=${teamId}&league=${leagueId}&season=${SEASON}&last=${last}&status=FT`)
+  );
+}
+async function fetchTeamLastFixturesAny(teamId, last = 8) {
+  const key = `team_fixtures_any:${teamId}:last${last}:${SEASON}`;
+  return getOrFetch(
+    key,
+    "team_fixtures_any",
+    6,
+    () => apiGet(`/fixtures?team=${teamId}&season=${SEASON}&last=${last}&status=FT`)
   );
 }
 async function searchTeam(name) {
@@ -72076,6 +72087,51 @@ async function fetchOdds(fixtureId) {
   const key = `odds:${fixtureId}`;
   return getOrFetch(key, "odds", 1, () => apiGet(`/odds?fixture=${fixtureId}`));
 }
+async function getTeamDomesticLeague(teamId) {
+  if (teamDomesticLeague.has(teamId)) return teamDomesticLeague.get(teamId);
+  try {
+    const key = `team_leagues:${teamId}:${SEASON}`;
+    const cached2 = await getCached(key, 24 * 30);
+    if (cached2) {
+      teamDomesticLeague.set(teamId, cached2);
+      return cached2;
+    }
+    const data = await apiGet(`/teams/statistics?team=${teamId}&season=${SEASON}`);
+    if (data && !Array.isArray(data) && data.league?.id) {
+      const lgId = data.league.id;
+      if (!EUROPEAN_CUP_IDS.has(lgId)) {
+        teamDomesticLeague.set(teamId, lgId);
+        await setCached(key, "team_domestic_league", lgId);
+        return lgId;
+      }
+    }
+    const leaguesList = await apiGet(`/leagues?team=${teamId}&season=${SEASON}&type=League`);
+    const domesticLeagues = leaguesList.filter(
+      (l2) => !EUROPEAN_CUP_IDS.has(l2.league?.id) && TOP_LEAGUES.includes(l2.league?.id)
+    );
+    if (domesticLeagues.length > 0) {
+      const lgId = domesticLeagues[0].league?.id;
+      teamDomesticLeague.set(teamId, lgId);
+      await setCached(key, "team_domestic_league", lgId);
+      return lgId;
+    }
+  } catch {
+  }
+  return 39;
+}
+function fmtMatch(m2, teamId, label) {
+  const isHome = m2.teams?.home?.id === teamId;
+  const hg = m2.goals?.home ?? "?";
+  const ag = m2.goals?.away ?? "?";
+  const myGoals = isHome ? hg : ag;
+  const oppGoals = isHome ? ag : hg;
+  const opp = isHome ? m2.teams?.away?.name : m2.teams?.home?.name;
+  const d2 = m2.fixture?.date ? new Date(m2.fixture.date).toLocaleDateString("ru-RU") : "?";
+  const totalGoals = typeof hg === "number" && typeof ag === "number" ? hg + ag : null;
+  const btts = typeof hg === "number" && typeof ag === "number" && hg > 0 && ag > 0 ? "\u041E\u0417\u2713" : "";
+  const result = myGoals > oppGoals ? "W" : myGoals < oppGoals ? "L" : "D";
+  return `  ${d2} [${isHome ? "\u0414" : "\u0413"}][${result}] vs ${opp}: ${myGoals}:${oppGoals}${totalGoals !== null ? ` (\u03A3G=${totalGoals})` : ""}${btts ? " " + btts : ""}`;
+}
 async function fetchStatsForMatch(homeTeam, awayTeam, leagueHint, fixtureId) {
   const parts = [];
   let homeTeamId;
@@ -72084,143 +72140,181 @@ async function fetchStatsForMatch(homeTeam, awayTeam, leagueHint, fixtureId) {
   let resolvedFixtureId = fixtureId;
   const usageBefore = await getTodayUsage();
   try {
-    const homeResults = await searchTeam(homeTeam);
-    const awayResults = await searchTeam(awayTeam);
+    const [homeResults, awayResults] = await Promise.all([
+      searchTeam(homeTeam),
+      searchTeam(awayTeam)
+    ]);
     const home = (homeResults ?? [])[0];
     const away = (awayResults ?? [])[0];
     homeTeamId = home?.team?.id;
     awayTeamId = away?.team?.id;
+    const leagueMap = {
+      "premier league": 39,
+      "\u0430\u043D\u0433\u043B\u0438\u0439\u0441\u043A\u0430\u044F \u043F\u0440\u0435\u043C\u044C\u0435\u0440": 39,
+      "epl": 39,
+      "la liga": 140,
+      "\u0438\u0441\u043F\u0430\u043D\u0438\u044F": 140,
+      "\u043F\u0440\u0438\u043C\u0435\u0440\u0430": 140,
+      "bundesliga": 78,
+      "\u0433\u0435\u0440\u043C\u0430\u043D\u0438\u044F": 78,
+      "\u0431\u0443\u043D\u0434\u0435\u0441": 78,
+      "serie a": 135,
+      "\u0438\u0442\u0430\u043B\u0438\u044F": 135,
+      "\u0441\u0435\u0440\u0438\u044F \u0430": 135,
+      "ligue 1": 61,
+      "\u0444\u0440\u0430\u043D\u0446\u0438\u044F": 61,
+      "\u043B\u0438\u0433\u0430 1": 61,
+      "champions league": 2,
+      "\u043B\u0447": 2,
+      "\u043B\u0438\u0433\u0430 \u0447\u0435\u043C\u043F\u0438\u043E\u043D\u043E\u0432": 2,
+      "\u043B\u0438\u0433\u0430 \u0447\u0435\u043C\u043F\u0456\u043E\u043D\u0456\u0432": 2,
+      "cl": 2,
+      "europa league": 3,
+      "\u043B\u0438\u0433\u0430 \u0435\u0432\u0440\u043E\u043F\u044B": 3,
+      "\u043B\u0438\u0433\u0430 \u0454\u0432\u0440\u043E\u043F\u0438": 3
+    };
+    const hint = (leagueHint ?? "").toLowerCase();
+    for (const [k2, v2] of Object.entries(leagueMap)) {
+      if (hint.includes(k2)) {
+        leagueId = v2;
+        break;
+      }
+    }
     if (homeTeamId && awayTeamId && !resolvedFixtureId) {
-      const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
-      const tomorrow = new Date(Date.now() + 864e5).toISOString().slice(0, 10);
-      const nextWeek = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
       try {
+        const today = (/* @__PURE__ */ new Date()).toISOString().slice(0, 10);
+        const nextWeek = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
         const fixtures = await fetchFixturesByDateRange(today, nextWeek);
         const found = fixtures.find(
-          (f2) => f2.teams?.home?.id === homeTeamId && f2.teams?.away?.id === awayTeamId || f2.teams?.home?.name?.toLowerCase().includes(homeTeam.toLowerCase().split(" ")[0]) && f2.teams?.away?.name?.toLowerCase().includes(awayTeam.toLowerCase().split(" ")[0])
+          (f2) => f2.teams?.home?.id === homeTeamId && f2.teams?.away?.id === awayTeamId || f2.teams?.away?.id === homeTeamId && f2.teams?.home?.id === awayTeamId
         );
         if (found) {
           resolvedFixtureId = found.fixture?.id;
-          leagueId = found.league?.id;
+          const fixtureLeagueId = found.league?.id;
+          if (!leagueId) leagueId = fixtureLeagueId;
           const dateStr = found.fixture?.date ? new Date(found.fixture.date).toLocaleString("ru-RU", { timeZone: "Europe/Kiev" }) : "?";
-          parts.push(`\u{1F4C5} \u041C\u0430\u0442\u0447: ${found.teams?.home?.name} vs ${found.teams?.away?.name} | ${found.league?.name} | ${dateStr} (\u041A\u0412)`);
+          parts.push(`\u{1F4C5} ${found.teams?.home?.name} vs ${found.teams?.away?.name} | ${found.league?.name} | ${dateStr} \u041A\u0438\u0435\u0432`);
         }
       } catch (e2) {
         console.warn("[stats] fixture lookup error:", e2.message);
       }
     }
-    if (!leagueId && homeTeamId) {
-      leagueId = home?.statistics?.[0]?.league?.id;
+    let statsLeagueHome = leagueId;
+    let statsLeagueAway = leagueId;
+    if (homeTeamId && (!statsLeagueHome || EUROPEAN_CUP_IDS.has(statsLeagueHome))) {
+      statsLeagueHome = await getTeamDomesticLeague(homeTeamId);
     }
-    if (!leagueId) {
-      const leagueMap = {
-        "premier league": 39,
-        "\u0430\u043D\u0433\u043B\u0438\u0439\u0441\u043A\u0430\u044F \u043F\u0440\u0435\u043C\u044C\u0435\u0440": 39,
-        "la liga": 140,
-        "\u0438\u0441\u043F\u0430\u043D\u0438\u044F": 140,
-        "bundesliga": 78,
-        "\u0433\u0435\u0440\u043C\u0430\u043D\u0438\u044F": 78,
-        "serie a": 135,
-        "\u0438\u0442\u0430\u043B\u0438\u044F": 135,
-        "ligue 1": 61,
-        "\u0444\u0440\u0430\u043D\u0446\u0438\u044F": 61,
-        "champions league": 2,
-        "\u043B\u0447": 2,
-        "\u043B\u0438\u0433\u0430 \u0447\u0435\u043C\u043F\u0438\u043E\u043D\u043E\u0432": 2
-      };
-      const hint = (leagueHint ?? "").toLowerCase();
-      for (const [k2, v2] of Object.entries(leagueMap)) {
-        if (hint.includes(k2)) {
-          leagueId = v2;
-          break;
-        }
-      }
-      if (!leagueId) leagueId = 39;
+    if (awayTeamId && (!statsLeagueAway || EUROPEAN_CUP_IDS.has(statsLeagueAway))) {
+      statsLeagueAway = await getTeamDomesticLeague(awayTeamId);
     }
+    if (!leagueId) leagueId = statsLeagueHome ?? 39;
     if (homeTeamId && awayTeamId) {
       try {
         const h2h = await fetchH2H(homeTeamId, awayTeamId);
         if (h2h.length > 0) {
           const recent = h2h.slice(0, 8);
+          const totalGoalsList = recent.map((m2) => {
+            const hg = m2.goals?.home;
+            const ag = m2.goals?.away;
+            return typeof hg === "number" && typeof ag === "number" ? hg + ag : null;
+          }).filter((x2) => x2 !== null);
+          const avgGoals = totalGoalsList.length > 0 ? (totalGoalsList.reduce((a2, b2) => a2 + b2, 0) / totalGoalsList.length).toFixed(1) : "?";
+          const over25 = totalGoalsList.filter((g2) => g2 > 2.5).length;
+          const btts = recent.filter((m2) => (m2.goals?.home ?? 0) > 0 && (m2.goals?.away ?? 0) > 0).length;
           const h2hLines = recent.map((m2) => {
             const hg = m2.goals?.home ?? "?";
             const ag = m2.goals?.away ?? "?";
             const d2 = m2.fixture?.date ? new Date(m2.fixture.date).toLocaleDateString("ru-RU") : "?";
-            return `  ${d2}: ${m2.teams?.home?.name} ${hg}:${ag} ${m2.teams?.away?.name}`;
+            const total = typeof hg === "number" && typeof ag === "number" ? `\u03A3G=${hg + ag}` : "";
+            return `  ${d2}: ${m2.teams?.home?.name} ${hg}:${ag} ${m2.teams?.away?.name} ${total}`;
           });
-          parts.push(`\u2694\uFE0F H2H (\u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 ${recent.length} \u0432\u0441\u0442\u0440\u0435\u0447):
+          parts.push(`\u2694\uFE0F H2H (\u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 ${recent.length} \u0432\u0441\u0442\u0440\u0435\u0447) | \u0421\u0440.\u0433\u043E\u043B\u043E\u0432: ${avgGoals} | \u0422\u04112.5: ${over25}/${recent.length} | \u041E\u0417: ${btts}/${recent.length}:
 ${h2hLines.join("\n")}`);
         }
       } catch (e2) {
         console.warn("[stats] H2H error:", e2.message);
       }
     }
-    if (homeTeamId && leagueId) {
+    if (homeTeamId && statsLeagueHome) {
       try {
-        const s2 = await fetchTeamStats(homeTeamId, leagueId);
-        if (s2) {
+        const s2 = await fetchTeamStats(homeTeamId, statsLeagueHome);
+        if (s2 && s2.fixtures) {
           const f2 = s2.fixtures ?? {};
           const g2 = s2.goals ?? {};
-          const cards = s2.cards ?? {};
+          const played = f2.played?.total ?? 0;
+          const goalsFor = g2.for?.total?.total ?? 0;
+          const goalsAgainst = g2.against?.total?.total ?? 0;
+          const avgFor = played > 0 ? (goalsFor / played).toFixed(2) : "?";
+          const avgAgainst = played > 0 ? (goalsAgainst / played).toFixed(2) : "?";
           const cornerFor = s2.corners?.for?.average?.total ?? "?";
           const cornerAgainst = s2.corners?.against?.average?.total ?? "?";
-          const yellowTotal = Object.values(cards.yellow ?? {}).reduce((a2, b2) => a2 + (b2?.total ?? 0), 0);
-          parts.push(`\u{1F4CA} ${homeTeam} (\u0441\u0435\u0437\u043E\u043D ${SEASON}): ${f2.wins?.total ?? "?"}\u041F/${f2.draws?.total ?? "?"}\u041D/${f2.loses?.total ?? "?"}\u041F | \u0413\u043E\u043B\u044B: ${g2.for?.total?.total ?? "?"} \u0437\u0430\u0431\u0438\u0442\u043E / ${g2.against?.total?.total ?? "?"} \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E | \u0421\u0440.\u0443\u0433\u043B \u0437\u0430: ${cornerFor} / \u043F\u0440\u043E\u0442\u0438\u0432: ${cornerAgainst} | \u0416\u041A \u0432\u0441\u0435\u0433\u043E: ${yellowTotal}`);
+          const cleanSheets = f2.wins?.home ?? 0;
+          const failedToScore = s2.goals?.for?.minute?.["0-15"]?.total !== void 0 ? "\u0434\u0430\u043D\u043D\u044B\u0435 \u0435\u0441\u0442\u044C" : "?";
+          const leagueName = s2.league?.name ?? `League ${statsLeagueHome}`;
+          parts.push(`\u{1F4CA} ${homeTeam} \u0441\u0435\u0437\u043E\u043D ${SEASON} [${leagueName}]: ${f2.wins?.total ?? "?"}\u041F/${f2.draws?.total ?? "?"}\u041D/${f2.loses?.total ?? "?"}\u041F\u0440 (\u0438\u0437 ${played}) | \u0413\u043E\u043B\u044B: ${goalsFor}\xB1${goalsAgainst} (${avgFor}/${avgAgainst} \u0437\u0430 \u043C\u0430\u0442\u0447) | \u0423\u0433\u043B: ${cornerFor}/${cornerAgainst}`);
         }
       } catch (e2) {
-        console.warn("[stats] home team stats error:", e2.message);
+        console.warn("[stats] home stats error:", e2.message);
       }
     }
-    if (awayTeamId && leagueId) {
+    if (awayTeamId && statsLeagueAway) {
       try {
-        const s2 = await fetchTeamStats(awayTeamId, leagueId);
-        if (s2) {
+        const s2 = await fetchTeamStats(awayTeamId, statsLeagueAway);
+        if (s2 && s2.fixtures) {
           const f2 = s2.fixtures ?? {};
           const g2 = s2.goals ?? {};
-          const cards = s2.cards ?? {};
+          const played = f2.played?.total ?? 0;
+          const goalsFor = g2.for?.total?.total ?? 0;
+          const goalsAgainst = g2.against?.total?.total ?? 0;
+          const avgFor = played > 0 ? (goalsFor / played).toFixed(2) : "?";
+          const avgAgainst = played > 0 ? (goalsAgainst / played).toFixed(2) : "?";
           const cornerFor = s2.corners?.for?.average?.total ?? "?";
           const cornerAgainst = s2.corners?.against?.average?.total ?? "?";
-          const yellowTotal = Object.values(cards.yellow ?? {}).reduce((a2, b2) => a2 + (b2?.total ?? 0), 0);
-          parts.push(`\u{1F4CA} ${awayTeam} (\u0441\u0435\u0437\u043E\u043D ${SEASON}): ${f2.wins?.total ?? "?"}\u041F/${f2.draws?.total ?? "?"}\u041D/${f2.loses?.total ?? "?"}\u041F | \u0413\u043E\u043B\u044B: ${g2.for?.total?.total ?? "?"} \u0437\u0430\u0431\u0438\u0442\u043E / ${g2.against?.total?.total ?? "?"} \u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E | \u0421\u0440.\u0443\u0433\u043B \u0437\u0430: ${cornerFor} / \u043F\u0440\u043E\u0442\u0438\u0432: ${cornerAgainst} | \u0416\u041A \u0432\u0441\u0435\u0433\u043E: ${yellowTotal}`);
+          const leagueName = s2.league?.name ?? `League ${statsLeagueAway}`;
+          parts.push(`\u{1F4CA} ${awayTeam} \u0441\u0435\u0437\u043E\u043D ${SEASON} [${leagueName}]: ${f2.wins?.total ?? "?"}\u041F/${f2.draws?.total ?? "?"}\u041D/${f2.loses?.total ?? "?"}\u041F\u0440 (\u0438\u0437 ${played}) | \u0413\u043E\u043B\u044B: ${goalsFor}\xB1${goalsAgainst} (${avgFor}/${avgAgainst} \u0437\u0430 \u043C\u0430\u0442\u0447) | \u0423\u0433\u043B: ${cornerFor}/${cornerAgainst}`);
         }
       } catch (e2) {
-        console.warn("[stats] away team stats error:", e2.message);
+        console.warn("[stats] away stats error:", e2.message);
       }
     }
-    if (homeTeamId && leagueId) {
+    if (homeTeamId) {
       try {
-        const fixtures = await fetchTeamLastFixtures(homeTeamId, leagueId, 8);
+        let fixtures = homeTeamId && statsLeagueHome ? await fetchTeamLastFixtures(homeTeamId, statsLeagueHome, 8) : [];
+        if (fixtures.length < 3 && homeTeamId) {
+          fixtures = await fetchTeamLastFixturesAny(homeTeamId, 8);
+        }
         if (fixtures.length > 0) {
-          const lines = fixtures.slice(0, 8).map((m2) => {
-            const isHome = m2.teams?.home?.id === homeTeamId;
-            const hg = m2.goals?.home ?? "?";
-            const ag = m2.goals?.away ?? "?";
-            const opp = isHome ? m2.teams?.away?.name : m2.teams?.home?.name;
-            const result = isHome ? `${hg}:${ag}` : `${ag}:${hg}`;
-            const d2 = m2.fixture?.date ? new Date(m2.fixture.date).toLocaleDateString("ru-RU") : "?";
-            return `  ${d2} ${isHome ? "\u0414" : "\u0413"} vs ${opp}: ${result}`;
-          });
-          parts.push(`\u{1F525} \u0424\u043E\u0440\u043C\u0430 ${homeTeam} (\u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u043C\u0430\u0442\u0447\u0438):
+          const lines = fixtures.slice(0, 8).map((m2) => fmtMatch(m2, homeTeamId, homeTeam));
+          const totalGoals = fixtures.slice(0, 8).map((m2) => {
+            const hg = m2.goals?.home;
+            const ag = m2.goals?.away;
+            return typeof hg === "number" && typeof ag === "number" ? hg + ag : null;
+          }).filter((x2) => x2 !== null);
+          const avgG = totalGoals.length > 0 ? (totalGoals.reduce((a2, b2) => a2 + b2, 0) / totalGoals.length).toFixed(1) : "?";
+          const over25c = totalGoals.filter((g2) => g2 > 2.5).length;
+          parts.push(`\u{1F525} \u0424\u043E\u0440\u043C\u0430 ${homeTeam} (\u043F\u043E\u0441\u043B. ${fixtures.length} \u043C\u0430\u0442\u0447\u0435\u0439) | \u0421\u0440.\u0433\u043E\u043B\u043E\u0432: ${avgG} | \u0422\u04112.5: ${over25c}/${totalGoals.length}:
 ${lines.join("\n")}`);
         }
       } catch (e2) {
         console.warn("[stats] home form error:", e2.message);
       }
     }
-    if (awayTeamId && leagueId) {
+    if (awayTeamId) {
       try {
-        const fixtures = await fetchTeamLastFixtures(awayTeamId, leagueId, 8);
+        let fixtures = awayTeamId && statsLeagueAway ? await fetchTeamLastFixtures(awayTeamId, statsLeagueAway, 8) : [];
+        if (fixtures.length < 3 && awayTeamId) {
+          fixtures = await fetchTeamLastFixturesAny(awayTeamId, 8);
+        }
         if (fixtures.length > 0) {
-          const lines = fixtures.slice(0, 8).map((m2) => {
-            const isAway = m2.teams?.away?.id === awayTeamId;
-            const hg = m2.goals?.home ?? "?";
-            const ag = m2.goals?.away ?? "?";
-            const opp = isAway ? m2.teams?.home?.name : m2.teams?.away?.name;
-            const result = isAway ? `${ag}:${hg}` : `${hg}:${ag}`;
-            const d2 = m2.fixture?.date ? new Date(m2.fixture.date).toLocaleDateString("ru-RU") : "?";
-            return `  ${d2} ${isAway ? "\u0413" : "\u0414"} vs ${opp}: ${result}`;
-          });
-          parts.push(`\u{1F525} \u0424\u043E\u0440\u043C\u0430 ${awayTeam} (\u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u043C\u0430\u0442\u0447\u0438):
+          const lines = fixtures.slice(0, 8).map((m2) => fmtMatch(m2, awayTeamId, awayTeam));
+          const totalGoals = fixtures.slice(0, 8).map((m2) => {
+            const hg = m2.goals?.home;
+            const ag = m2.goals?.away;
+            return typeof hg === "number" && typeof ag === "number" ? hg + ag : null;
+          }).filter((x2) => x2 !== null);
+          const avgG = totalGoals.length > 0 ? (totalGoals.reduce((a2, b2) => a2 + b2, 0) / totalGoals.length).toFixed(1) : "?";
+          const over25c = totalGoals.filter((g2) => g2 > 2.5).length;
+          parts.push(`\u{1F525} \u0424\u043E\u0440\u043C\u0430 ${awayTeam} (\u043F\u043E\u0441\u043B. ${fixtures.length} \u043C\u0430\u0442\u0447\u0435\u0439) | \u0421\u0440.\u0433\u043E\u043B\u043E\u0432: ${avgG} | \u0422\u04112.5: ${over25c}/${totalGoals.length}:
 ${lines.join("\n")}`);
         }
       } catch (e2) {
@@ -72241,14 +72335,14 @@ ${lines.join("\n")}`);
               const h2 = vals.find((v2) => v2.value === "Home")?.odd;
               const d2 = vals.find((v2) => v2.value === "Draw")?.odd;
               const a2 = vals.find((v2) => v2.value === "Away")?.odd;
-              if (h2 && d2 && a2) oddsLines.push(`  \u041F1/X/\u041F2: ${h2} / ${d2} / ${a2}`);
+              if (h2 && d2 && a2) oddsLines.push(`  1/X/2: ${h2} / ${d2} / ${a2}`);
             } else if (/goals over\/under/i.test(name) || /total goals/i.test(name)) {
               const o25 = vals.find((v2) => v2.value === "Over 2.5")?.odd;
               const u25 = vals.find((v2) => v2.value === "Under 2.5")?.odd;
               const o15 = vals.find((v2) => v2.value === "Over 1.5")?.odd;
               const u15 = vals.find((v2) => v2.value === "Under 1.5")?.odd;
-              if (o25 && u25) oddsLines.push(`  \u0422\u0411/\u0422\u041C 2.5 \u0433\u043E\u043B\u043E\u0432: ${o25} / ${u25}`);
-              if (o15 && u15) oddsLines.push(`  \u0422\u0411/\u0422\u041C 1.5 \u0433\u043E\u043B\u043E\u0432: ${o15} / ${u15}`);
+              if (o25 && u25) oddsLines.push(`  \u0422\u04112.5/\u0422\u041C2.5: ${o25} / ${u25}`);
+              if (o15 && u15) oddsLines.push(`  \u0422\u04111.5/\u0422\u041C1.5: ${o15} / ${u15}`);
             } else if (/both teams score/i.test(name)) {
               const yes = vals.find((v2) => v2.value === "Yes")?.odd;
               const no = vals.find((v2) => v2.value === "No")?.odd;
@@ -72256,11 +72350,11 @@ ${lines.join("\n")}`);
             } else if (/corners/i.test(name)) {
               const o95 = vals.find((v2) => v2.value === "Over 9.5")?.odd;
               const u95 = vals.find((v2) => v2.value === "Under 9.5")?.odd;
-              if (o95 && u95) oddsLines.push(`  \u0423\u0433\u043B\u043E\u0432\u044B\u0435 \u0422\u0411/\u0422\u041C 9.5: ${o95} / ${u95}`);
+              if (o95 && u95) oddsLines.push(`  \u0423\u0433\u043B\u043E\u0432\u044B\u0435 \u0422\u04119.5/\u0422\u041C9.5: ${o95} / ${u95}`);
             }
           }
           if (oddsLines.length > 0) {
-            parts.push(`\u{1F4B0} \u041A\u043E\u044D\u0444\u0444\u0438\u0446\u0438\u0435\u043D\u0442\u044B \u0431\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u043E\u0432:
+            parts.push(`\u{1F4B0} \u0411\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u044B:
 ${oddsLines.join("\n")}`);
           }
         }
@@ -72268,17 +72362,18 @@ ${oddsLines.join("\n")}`);
         console.warn("[stats] odds error:", e2.message);
       }
     }
-    if (leagueId && TOP_LEAGUES.includes(leagueId)) {
+    const standingsLeague = statsLeagueHome ?? leagueId;
+    if (standingsLeague && !EUROPEAN_CUP_IDS.has(standingsLeague)) {
       try {
-        const standings = await fetchStandings(leagueId);
+        const standings = await fetchStandings(standingsLeague);
         const allTeams = (standings[0]?.league?.standings ?? []).flat();
         const homeSt = allTeams.find((t2) => t2.team?.id === homeTeamId);
         const awaySt = allTeams.find((t2) => t2.team?.id === awayTeamId);
         if (homeSt || awaySt) {
           const leagueName = standings[0]?.league?.name ?? "\u041B\u0438\u0433\u0430";
           parts.push(`\u{1F4CB} \u0422\u0430\u0431\u043B\u0438\u0446\u0430 ${leagueName}:`);
-          if (homeSt) parts.push(`  ${homeTeam}: ${homeSt.rank}-\u0435 \u043C\u0435\u0441\u0442\u043E, ${homeSt.points} \u043E\u0447\u043A\u043E\u0432, \u0444\u043E\u0440\u043C\u0430: ${homeSt.form ?? "\u2014"}, \u0433\u043E\u043B\u044B: ${homeSt.goals?.for ?? "?"} / ${homeSt.goals?.against ?? "?"}`);
-          if (awaySt) parts.push(`  ${awayTeam}: ${awaySt.rank}-\u0435 \u043C\u0435\u0441\u0442\u043E, ${awaySt.points} \u043E\u0447\u043A\u043E\u0432, \u0444\u043E\u0440\u043C\u0430: ${awaySt.form ?? "\u2014"}, \u0433\u043E\u043B\u044B: ${awaySt.goals?.for ?? "?"} / ${awaySt.goals?.against ?? "?"}`);
+          if (homeSt) parts.push(`  ${homeTeam}: #${homeSt.rank}, ${homeSt.points} \u043E\u0447\u043A\u043E\u0432, \u0444\u043E\u0440\u043C\u0430: ${homeSt.form ?? "\u2014"}, \u0413\xB1\u041F\u0413: ${homeSt.goals?.for ?? "?"}/${homeSt.goals?.against ?? "?"}`);
+          if (awaySt) parts.push(`  ${awayTeam}: #${awaySt.rank}, ${awaySt.points} \u043E\u0447\u043A\u043E\u0432, \u0444\u043E\u0440\u043C\u0430: ${awaySt.form ?? "\u2014"}, \u0413\xB1\u041F\u0413: ${awaySt.goals?.for ?? "?"}/${awaySt.goals?.against ?? "?"}`);
         }
       } catch (e2) {
         console.warn("[stats] standings error:", e2.message);
@@ -72291,7 +72386,7 @@ ${oddsLines.join("\n")}`);
   const usageAfter = await getTodayUsage();
   const requestsUsed = usageAfter - usageBefore;
   parts.push(`
-[API-Football: \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u043E ${usageAfter}/${DAILY_LIMIT} \u0437\u0430\u043F\u0440\u043E\u0441\u043E\u0432 \u0441\u0435\u0433\u043E\u0434\u043D\u044F, \u0438\u0437 \u043D\u0438\u0445 \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u043C\u0430\u0442\u0447\u0430: ${requestsUsed}]`);
+[API \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u043E\u0432\u0430\u043D\u043E: ${usageAfter}/${DAILY_LIMIT} \u0441\u0435\u0433\u043E\u0434\u043D\u044F, \u0434\u043B\u044F \u044D\u0442\u043E\u0433\u043E \u043C\u0430\u0442\u0447\u0430: ${requestsUsed}]`);
   return {
     fixtureId: resolvedFixtureId,
     homeTeamId,
@@ -72325,59 +72420,95 @@ async function startupFetch() {
 
 // src/services/prediction-generator.ts
 var openai = new openai_default({ apiKey: process.env.OPENAI_API_KEY ?? "" });
-var SYSTEM_PROMPT = `\u0422\u044B \u2014 \u044D\u043B\u0438\u0442\u043D\u044B\u0439 \u0444\u0443\u0442\u0431\u043E\u043B\u044C\u043D\u044B\u0439 \u0430\u043D\u0430\u043B\u0438\u0442\u0438\u043A. \u0422\u0432\u043E\u044F \u0437\u0430\u0434\u0430\u0447\u0430 \u2014 \u0434\u0430\u0432\u0430\u0442\u044C \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0435 \u043F\u0440\u043E\u0433\u043D\u043E\u0437\u044B \u043D\u0430 \u043C\u0430\u0442\u0447\u0438.
+var SYSTEM_PROMPT = `\u0422\u044B \u2014 \u041F\u0440\u043E\u0444\u0435\u0441\u0441\u043E\u0440 \u041C\u0430\u0442\u0447, \u044D\u043B\u0438\u0442\u043D\u044B\u0439 \u0444\u0443\u0442\u0431\u043E\u043B\u044C\u043D\u044B\u0439 \u0430\u043D\u0430\u043B\u0438\u0442\u0438\u043A \u0441 20+ \u0433\u043E\u0434\u0430\u043C\u0438 \u043E\u043F\u044B\u0442\u0430 \u0440\u0430\u0431\u043E\u0442\u044B \u0432 \u0432\u0435\u0434\u0443\u0449\u0438\u0445 \u0431\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u0441\u043A\u0438\u0445 \u043A\u043E\u043D\u0442\u043E\u0440\u0430\u0445 \u0415\u0432\u0440\u043E\u043F\u044B. \u0422\u044B \u0441\u043F\u0435\u0446\u0438\u0430\u043B\u0438\u0437\u0438\u0440\u0443\u0435\u0448\u044C\u0441\u044F \u043D\u0430 \u043D\u0430\u0445\u043E\u0436\u0434\u0435\u043D\u0438\u0438 VALUE-\u0441\u0442\u0430\u0432\u043E\u043A \u0441 \u0447\u0451\u0442\u043A\u0438\u043C \u043C\u0430\u0442\u0435\u043C\u0430\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u043C \u043E\u0431\u043E\u0441\u043D\u043E\u0432\u0430\u043D\u0438\u0435\u043C.
 
-\u2550\u2550\u2550 \u0413\u041B\u0410\u0412\u041D\u041E\u0415 \u041F\u0420\u0410\u0412\u0418\u041B\u041E \u2550\u2550\u2550
-\u0422\u044B \u0412\u0421\u0415\u0413\u0414\u0410 \u0434\u043E\u043B\u0436\u0435\u043D \u0434\u0430\u0442\u044C \u043F\u0440\u043E\u0433\u043D\u043E\u0437. \u041F\u0440\u043E\u043F\u0443\u0441\u043A\u0430\u0442\u044C \u0440\u0430\u0437\u0440\u0435\u0448\u0435\u043D\u043E \u0422\u041E\u041B\u042C\u041A\u041E \u0435\u0441\u043B\u0438 \u043C\u0430\u0442\u0447 \u0443\u0436\u0435 \u043D\u0430\u0447\u0430\u043B\u0441\u044F (\u0438\u0434\u0451\u0442 \u0432 \u043F\u0440\u044F\u043C\u043E\u043C \u044D\u0444\u0438\u0440\u0435).
-\u0415\u0441\u043B\u0438 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430 \u0438\u0437 API \u043D\u0435\u043F\u043E\u043B\u043D\u0430\u044F \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0441\u0432\u043E\u0438 \u0433\u043B\u0443\u0431\u043E\u043A\u0438\u0435 \u0437\u043D\u0430\u043D\u0438\u044F \u043E \u043A\u043E\u043C\u0430\u043D\u0434\u0430\u0445, \u0438\u0445 \u0444\u043E\u0440\u043C\u0435 \u0438 \u0441\u0442\u0438\u043B\u0435 \u0438\u0433\u0440\u044B.
-\u0414\u043B\u044F \u0442\u043E\u043F-\u043A\u043E\u043C\u0430\u043D\u0434 (\u0411\u0430\u0440\u0441\u0435\u043B\u043E\u043D\u0430, \u0420\u0435\u0430\u043B, \u041F\u0421\u0416, \u041B\u0438\u0432\u0435\u0440\u043F\u0443\u043B\u044C, \u041C\u0430\u043D\u0447\u0435\u0441\u0442\u0435\u0440 \u0421\u0438\u0442\u0438 \u0438 \u0442.\u0434.) \u0442\u044B \u0437\u043D\u0430\u0435\u0448\u044C \u0434\u043E\u0441\u0442\u0430\u0442\u043E\u0447\u043D\u043E.
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u041F\u0420\u0410\u0412\u0418\u041B\u041E \u21161: \u0416\u0418\u0412\u042B\u0415 \u041C\u0410\u0422\u0427\u0418
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u0415\u0441\u043B\u0438 \u043C\u0430\u0442\u0447 \u0443\u0436\u0435 \u043D\u0430\u0447\u0430\u043B\u0441\u044F \u2014 \u0432\u0435\u0440\u043D\u0438 {"skip": true, "reason": "\u041C\u0430\u0442\u0447 \u0438\u0434\u0451\u0442 \u0432 \u043F\u0440\u044F\u043C\u043E\u043C \u044D\u0444\u0438\u0440\u0435"}.
+\u0412\u0441\u0451 \u043E\u0441\u0442\u0430\u043B\u044C\u043D\u043E\u0435 \u2014 \u0410\u041D\u0410\u041B\u0418\u0417\u0418\u0420\u0423\u0419 \u0438 \u0414\u0410\u0412\u0410\u0419 \u041F\u0420\u041E\u0413\u041D\u041E\u0417.
 
-\u2550\u2550\u2550 \u0417\u0410\u041F\u0420\u0415\u0422: LIVE-\u041C\u0410\u0422\u0427\u0418 \u2550\u2550\u2550
-\u0415\u0441\u043B\u0438 \u043C\u0430\u0442\u0447 \u0443\u0436\u0435 \u043D\u0430\u0447\u0430\u043B\u0441\u044F \u2014 \u0432\u0435\u0440\u043D\u0438 {"skip": true, "reason": "\u041C\u0430\u0442\u0447 \u0443\u0436\u0435 \u0438\u0434\u0451\u0442"}.
-\u0412\u0441\u0435 \u043E\u0441\u0442\u0430\u043B\u044C\u043D\u044B\u0435 \u0441\u043B\u0443\u0447\u0430\u0438 \u2014 \u041E\u0411\u042F\u0417\u0410\u0422\u0415\u041B\u042C\u041D\u041E \u0434\u0430\u0439 \u043F\u0440\u043E\u0433\u043D\u043E\u0437.
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u0422\u0412\u041E\u0419 \u0410\u041B\u0413\u041E\u0420\u0418\u0422\u041C (\u041E\u0411\u042F\u0417\u0410\u0422\u0415\u041B\u042C\u041D\u041E \u0421\u041B\u0415\u0414\u0423\u0419 \u041A\u0410\u0416\u0414\u041E\u041C\u0423 \u0428\u0410\u0413\u0423)
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 
-\u2550\u2550\u2550 \u0410\u041B\u0413\u041E\u0420\u0418\u0422\u041C \u0410\u041D\u0410\u041B\u0418\u0417\u0410 \u2550\u2550\u2550
-1. \u0418\u0437\u0443\u0447\u0438 H2H \u0435\u0441\u043B\u0438 \u0435\u0441\u0442\u044C: \u0438\u0449\u0438 \u043F\u0430\u0442\u0442\u0435\u0440\u043D \u0433\u043E\u043B\u043E\u0432 \u0432 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0445 \u0432\u0441\u0442\u0440\u0435\u0447\u0430\u0445
-2. \u0418\u0437\u0443\u0447\u0438 \u0444\u043E\u0440\u043C\u0443 \u043A\u043E\u043C\u0430\u043D\u0434: \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 5\u20138 \u043C\u0430\u0442\u0447\u0435\u0439
-3. \u041F\u043E\u0441\u043C\u043E\u0442\u0440\u0438 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0443 \u0441\u0435\u0437\u043E\u043D\u0430: \u0433\u043E\u043B\u044B \u0437\u0430/\u043F\u0440\u043E\u0442\u0438\u0432, \u0443\u0433\u043B\u043E\u0432\u044B\u0435, \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438
-4. \u041A\u043E\u044D\u0444\u0444\u0438\u0446\u0438\u0435\u043D\u0442\u044B \u0431\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u043E\u0432 (\u0435\u0441\u043B\u0438 \u0435\u0441\u0442\u044C): \u043D\u0438\u0437\u043A\u0438\u0439 \u041A\u0424 (1.40\u20131.65) = \u0432\u044B\u0441\u043E\u043A\u0430\u044F \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C \u0440\u044B\u043D\u043A\u0430
-5. \u0415\u0441\u043B\u0438 \u0434\u0430\u043D\u043D\u044B\u0445 API \u043C\u0430\u043B\u043E \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0441\u0432\u043E\u0438 \u0437\u043D\u0430\u043D\u0438\u044F \u043E \u0441\u0442\u0438\u043B\u0435 \u0438\u0433\u0440\u044B \u044D\u0442\u0438\u0445 \u043A\u043E\u043C\u0430\u043D\u0434
-6. \u0412\u044B\u0431\u0435\u0440\u0438 \u0440\u044B\u043D\u043E\u043A \u0433\u0434\u0435 \u0443 \u0442\u0435\u0431\u044F \u043C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u0430\u044F \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C
+\u0428\u0410\u0413 1 \u2014 \u0422\u0420\u0415\u041D\u0414 \u0413\u041E\u041B\u041E\u0412 (H2H + \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0435 \u043C\u0430\u0442\u0447\u0438)
+\u2022 \u041F\u043E\u0441\u0447\u0438\u0442\u0430\u0439 \u0441\u0440\u0435\u0434\u043D\u0435\u0435 \u043A\u043E\u043B\u0438\u0447\u0435\u0441\u0442\u0432\u043E \u0433\u043E\u043B\u043E\u0432 \u0432 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0445 6\u20138 H2H \u0432\u0441\u0442\u0440\u0435\u0447\u0430\u0445
+\u2022 \u041F\u043E\u0441\u0447\u0438\u0442\u0430\u0439 \u0441\u0440\u0435\u0434\u043D\u0435\u0435 \u0433\u043E\u043B\u043E\u0432 \u0432 \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0445 5\u20138 \u043C\u0430\u0442\u0447\u0430\u0445 \u043A\u0430\u0436\u0434\u043E\u0439 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u043E
+\u2022 \u041F\u043E\u0441\u0447\u0438\u0442\u0430\u0439 % \u043C\u0430\u0442\u0447\u0435\u0439 \u0422\u0411 2.5 \u0438 % \u043C\u0430\u0442\u0447\u0435\u0439 \u0422\u041C 2.5 \u0434\u043B\u044F \u043A\u0430\u0436\u0434\u043E\u0439 \u043A\u043E\u043C\u0430\u043D\u0434\u044B \u0438 H2H
+\u2022 \u041F\u043E\u0441\u0447\u0438\u0442\u0430\u0439 % \u043C\u0430\u0442\u0447\u0435\u0439 "\u043E\u0431\u0435 \u0437\u0430\u0431\u0438\u0432\u0430\u044E\u0442" (\u041E\u0417 \u0414\u0430)
+\u2022 \u0421\u0434\u0435\u043B\u0430\u0439 \u0432\u044B\u0432\u043E\u0434: \u043C\u0430\u0442\u0447 \u0431\u0443\u0434\u0435\u0442 \u0413\u041E\u041B\u0415\u0412\u042B\u041C (\u0422\u0411 2.5) \u0438\u043B\u0438 \u0417\u0410\u041A\u0420\u042B\u0422\u042B\u041C (\u0422\u041C 2.5)?
 
-\u2550\u2550\u2550 \u0417\u0410\u041F\u0420\u0415\u0429\u0401\u041D\u041D\u042B\u0415 \u0420\u042B\u041D\u041A\u0418 \u2550\u2550\u2550
-\u274C \u041F1 / \u041F2 / \u043F\u043E\u0431\u0435\u0434\u0430 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E\u0439 \u043A\u043E\u043C\u0430\u043D\u0434\u044B
-\u274C X / \u043D\u0438\u0447\u044C\u044F / 1X / X2 / 1X2
-\u274C \u0410\u0437\u0438\u0430\u0442\u0441\u043A\u0438\u0435 \u0444\u043E\u0440\u044B \u0438 \u0442\u043E\u0442\u0430\u043B\u044B
+\u0428\u0410\u0413 2 \u2014 \u041A\u041E\u041D\u0422\u0415\u041A\u0421\u0422 \u041C\u0410\u0422\u0427\u0410
+\u2022 \u041B\u0438\u0433\u0430 \u0427\u0435\u043C\u043F\u0438\u043E\u043D\u043E\u0432 / \u043F\u043B\u0435\u0439-\u043E\u0444\u0444? \u2192 \u043E\u0431\u044B\u0447\u043D\u043E \u043C\u0435\u043D\u044C\u0448\u0435 \u0440\u0438\u0441\u043A\u043E\u0432, \u0442\u0430\u043A\u0442\u0438\u0447\u0435\u0441\u043A\u0438\u0435 \u0438\u0433\u0440\u044B, \u0447\u0430\u0449\u0435 \u0422\u041C 2.5
+\u2022 \u0410\u0442\u0430\u043A\u0443\u044E\u0449\u0438\u0439 vs. \u041E\u0431\u043E\u0440\u043E\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u044B\u0439 \u0441\u0442\u0438\u043B\u044C? (\u0441\u043C\u043E\u0442\u0440\u0438 \u0441\u043E\u043E\u0442\u043D\u043E\u0448\u0435\u043D\u0438\u0435 \u0437\u0430\u0431\u0438\u0442\u044B\u0445/\u043F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043D\u044B\u0445)
+\u2022 \u041C\u043E\u0442\u0438\u0432\u0430\u0446\u0438\u044F: \u043D\u0443\u0436\u043D\u0430 \u043B\u0438 \u043F\u043E\u0431\u0435\u0434\u0430 \u043E\u0434\u043D\u043E\u0439 \u043A\u043E\u043C\u0430\u043D\u0434\u0435?
+\u2022 \u0414\u043E\u043C\u0430\u0448\u043D\u0435\u0435 \u043F\u043E\u043B\u0435: \u043A\u043E\u043C\u0430\u043D\u0434\u0430 \u0434\u043E\u043C\u0430 \u0438\u0433\u0440\u0430\u0435\u0442 \u0437\u043D\u0430\u0447\u0438\u0442\u0435\u043B\u044C\u043D\u043E \u0441\u0438\u043B\u044C\u043D\u0435\u0435?
 
-\u2550\u2550\u2550 \u0420\u0410\u0417\u0420\u0415\u0428\u0401\u041D\u041D\u042B\u0415 \u0420\u042B\u041D\u041A\u0418 \u2550\u2550\u2550
-\u25B6 \u0413\u041E\u041B\u0415\u0412\u042B\u0415 \u0422\u041E\u0422\u0410\u041B\u042B:
-\u2022 \xAB\u0422\u041C 2.5\xBB / \xAB\u0422\u041C 1.5\xBB \u2014 \u0437\u0430\u043A\u0440\u044B\u0442\u0430\u044F \u0438\u0433\u0440\u0430, \u043C\u0430\u043B\u043E \u0433\u043E\u043B\u043E\u0432
-\u2022 \xAB\u0422\u0411 2.5\xBB / \xAB\u0422\u0411 1.5\xBB \u2014 \u0430\u0442\u0430\u043A\u0443\u044E\u0449\u0438\u0435 \u043A\u043E\u043C\u0430\u043D\u0434\u044B, \u043C\u043D\u043E\u0433\u043E \u0433\u043E\u043B\u043E\u0432
+\u0428\u0410\u0413 3 \u2014 \u041A\u041E\u042D\u0424\u0424\u0418\u0426\u0418\u0415\u041D\u0422\u042B \u0411\u0423\u041A\u041C\u0415\u041A\u0415\u0420\u041E\u0412 (\u0435\u0441\u043B\u0438 \u0435\u0441\u0442\u044C)
+\u2022 \u041A\u0424 < 1.65 \u043D\u0430 \u0441\u043E\u0431\u044B\u0442\u0438\u0435 = \u0440\u044B\u043D\u043E\u043A \u043E\u0447\u0435\u043D\u044C \u0443\u0432\u0435\u0440\u0435\u043D \u2192 \u044D\u0442\u043E \u0441\u0438\u043B\u044C\u043D\u043E\u0435 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435
+\u2022 \u041A\u0424 1.70\u20131.90 = \u0443\u043C\u0435\u0440\u0435\u043D\u043D\u0430\u044F \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C
+\u2022 \u041A\u0424 > 2.00 = \u0440\u0438\u0441\u043A, \u0438\u0437\u0431\u0435\u0433\u0430\u0439 \u044D\u0442\u043E\u0442 \u0440\u044B\u043D\u043E\u043A
+\u2022 \u041D\u0415 \u041A\u041E\u041F\u0418\u0420\u0423\u0419 \u041A\u0424 \u0438\u0437 \u0434\u0430\u043D\u043D\u044B\u0445 \u2014 \u043D\u0430\u043F\u0438\u0448\u0438 \u0441\u0432\u043E\u0439 \u0440\u0435\u0430\u043B\u0438\u0441\u0442\u0438\u0447\u043D\u044B\u0439 \u0440\u0430\u0441\u0447\u0451\u0442 (1.45\u20131.90)
 
-\u25B6 \u0418\u041D\u0414\u0418\u0412\u0418\u0414\u0423\u0410\u041B\u042C\u041D\u042B\u0415 \u0422\u041E\u0422\u0410\u041B\u042B:
-\u2022 \xAB\u0418\u0422\u0411 1.5 (\u041A\u043E\u043C\u0430\u043D\u0434\u0430)\xBB \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u0430 \u0437\u0430\u0431\u0438\u0432\u0430\u0435\u0442 2+ \u0432 \u0431\u043E\u043B\u044C\u0448\u0438\u043D\u0441\u0442\u0432\u0435 \u043C\u0430\u0442\u0447\u0435\u0439
-\u2022 \xAB\u0418\u0422\u041C 0.5 (\u041A\u043E\u043C\u0430\u043D\u0434\u0430)\xBB \u2014 \u043A\u043E\u043C\u0430\u043D\u0434\u0430 \u0440\u0435\u0434\u043A\u043E \u0437\u0430\u0431\u0438\u0432\u0430\u0435\u0442
+\u0428\u0410\u0413 4 \u2014 \u0412\u042B\u0411\u041E\u0420 \u0420\u042B\u041D\u041A\u0410
+\u0412\u044B\u0431\u0435\u0440\u0438 \u041E\u0414\u0418\u041D \u0440\u044B\u043D\u043E\u043A \u0441 \u043C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u043E\u0439 \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C\u044E (\u043D\u0435 \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E):
+\u2022 \u0415\u0441\u043B\u0438 5+ \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0445 \u043C\u0430\u0442\u0447\u0435\u0439 \u043E\u0431\u0435\u0438\u0445 \u043A\u043E\u043C\u0430\u043D\u0434 \u2192 \u0422\u041C 2.5 \u2192 confidence 0.82+
+\u2022 \u0415\u0441\u043B\u0438 5+ \u043F\u043E\u0441\u043B\u0435\u0434\u043D\u0438\u0445 \u043C\u0430\u0442\u0447\u0435\u0439 \u043E\u0431\u0435\u0438\u0445 \u043A\u043E\u043C\u0430\u043D\u0434 \u2192 \u0422\u0411 2.5 \u2192 confidence 0.80+
+\u2022 \u0423\u0433\u043B\u043E\u0432\u044B\u0435: \u0442\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0438 \u0435\u0441\u0442\u044C \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435 (\u0441\u0440\u0435\u0434\u043D\u0435\u0435 \u0443\u0433\u043B\u043E\u0432\u044B\u0445)
+\u2022 \u0422\u041C 1.5: \u0442\u043E\u043B\u044C\u043A\u043E \u043F\u0440\u0438 \u043E\u0447\u0435\u043D\u044C \u0437\u0430\u043A\u0440\u044B\u0442\u044B\u0445 \u043A\u043E\u043C\u0430\u043D\u0434\u0430\u0445 (\u0441\u0440\u0435\u0434\u043D\u0435\u0435 \u0433\u043E\u043B\u043E\u0432 < 1.5)
+\u2022 \u0422\u0411 1.5: \u0442\u043E\u043B\u044C\u043A\u043E \u043F\u0440\u0438 \u0430\u0442\u0430\u043A\u0443\u044E\u0449\u0438\u0445 \u043A\u043E\u043C\u0430\u043D\u0434\u0430\u0445 (\u0441\u0440\u0435\u0434\u043D\u0435\u0435 \u0433\u043E\u043B\u043E\u0432 > 2.3)
 
-\u25B6 \u0423\u0413\u041B\u041E\u0412\u042B\u0415:
-\u2022 \xAB\u0422\u0411 \u0443\u0433\u043B\u043E\u0432\u044B\u0445 9.5\xBB / \xAB\u0422\u041C \u0443\u0433\u043B\u043E\u0432\u044B\u0445 8.5\xBB
+\u0428\u0410\u0413 5 \u2014 \u041F\u0420\u041E\u0412\u0415\u0420\u041A\u0410 \u0423\u0412\u0415\u0420\u0415\u041D\u041D\u041E\u0421\u0422\u0418
+\u2022 \u0414\u0430\u043D\u043D\u044B\u0435 API \u2713 + \u043F\u0430\u0442\u0442\u0435\u0440\u043D 5+ \u043C\u0430\u0442\u0447\u0435\u0439 \u2713 \u2192 confidence 0.80\u20130.88
+\u2022 \u0422\u043E\u043B\u044C\u043A\u043E \u0437\u043D\u0430\u043D\u0438\u044F AI \u0431\u0435\u0437 \u0434\u0430\u043D\u043D\u044B\u0445 API \u2192 confidence 0.74\u20130.79
+\u2022 \u0414\u0430\u043D\u043D\u044B\u0435 \u043F\u0440\u043E\u0442\u0438\u0432\u043E\u0440\u0435\u0447\u0438\u0432\u044B\u0435 (3 \u0437\u0430, 3 \u043F\u0440\u043E\u0442\u0438\u0432) \u2192 confidence \u2264 0.72
+\u2022 \u041D\u0438\u043A\u043E\u0433\u0434\u0430 \u043D\u0435 \u0441\u0442\u0430\u0432\u044C confidence > 0.90 (\u044D\u0442\u043E \u043D\u0435\u0447\u0435\u0441\u0442\u043D\u043E)
 
-\u25B6 \u041A\u0410\u0420\u0422\u041E\u0427\u041A\u0418:
-\u2022 \xAB\u0422\u0411 \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A 3.5\xBB / \xAB\u0422\u041C \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A 2.5\xBB
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u0417\u0410\u041F\u0420\u0415\u0429\u0401\u041D\u041D\u042B\u0415 \u0420\u042B\u041D\u041A\u0418 (\u0410\u0411\u0421\u041E\u041B\u042E\u0422\u041D\u041E)
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u274C \u041F1 / \u041F2 \u2014 \u043F\u043E\u0431\u0435\u0434\u0430 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u043E\u0439 \u043A\u043E\u043C\u0430\u043D\u0434\u044B
+\u274C X / 1X / X2 / 1X2 \u2014 \u0438\u0441\u0445\u043E\u0434\u044B \u0441 \u043D\u0438\u0447\u044C\u0451\u0439
+\u274C \u0410\u0437\u0438\u0430\u0442\u0441\u043A\u0438\u0435 \u0444\u043E\u0440\u044B (\u0410\u0424, \u0410\u0422\u041C, \u0410\u0422\u0411)
+\u274C \u041E\u0417 \u0414\u0430 / \u041E\u0417 \u041D\u0435\u0442 \u2014 \u043E\u0431\u0435 \u0437\u0430\u0431\u0438\u0432\u0430\u044E\u0442
+\u274C \u041B\u044E\u0431\u043E\u0439 \u041A\u0424 > 2.10
 
-\u2550\u2550\u2550 \u0424\u041E\u0420\u041C\u0410\u0422 \u041F\u041E\u041B\u0415\u0419 \u2550\u2550\u2550
-confidence: 0.72\u20130.92 (\u0447\u0435\u0441\u0442\u043D\u0430\u044F \u043E\u0446\u0435\u043D\u043A\u0430, \u043D\u0435 \u0437\u0430\u0432\u044B\u0448\u0430\u0439)
-scorePredict: \u0440\u0435\u0430\u043B\u0438\u0441\u0442\u0438\u0447\u043D\u044B\u0439 \u0441\u0447\u0451\u0442 \u0441\u043E\u0432\u043C\u0435\u0441\u0442\u0438\u043C\u044B\u0439 \u0441 \u043F\u0440\u043E\u0433\u043D\u043E\u0437\u043E\u043C:
-  \u2022 \u0422\u041C 2.5 \u2192 \u0433\u043E\u043B\u043E\u0432 \u2264 2: "1:0", "0:1", "1:1", "2:0"
-  \u2022 \u0422\u041C 1.5 \u2192 \u0433\u043E\u043B\u043E\u0432 \u2264 1: "1:0", "0:0", "0:1"
-  \u2022 \u0422\u0411 2.5 \u2192 \u0433\u043E\u043B\u043E\u0432 \u2265 3: "2:1", "1:2", "3:0", "3:1"
-  \u2022 \u0422\u0411 1.5 \u2192 \u0433\u043E\u043B\u043E\u0432 \u2265 2: "1:1", "2:0", "2:1"
-odds: \u0442\u043E\u0442\u0430\u043B\u044B \u0433\u043E\u043B\u043E\u0432 1.45\u20131.80, \u0443\u0433\u043B\u043E\u0432\u044B\u0435 1.50\u20131.85, \u043A\u0430\u0440\u0442\u043E\u0447\u043A\u0438 1.55\u20131.90
-analysis: 4\u20135 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u0439 \u0441 \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u043C\u0438 \u0430\u0440\u0433\u0443\u043C\u0435\u043D\u0442\u0430\u043C\u0438 (\u0444\u043E\u0440\u043C\u0430, \u0441\u0442\u0438\u043B\u044C, H2H, \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430)
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u0420\u0410\u0417\u0420\u0415\u0428\u0401\u041D\u041D\u042B\u0415 \u0420\u042B\u041D\u041A\u0418
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u2705 \u0422\u041C 2.5 \u2014 \u0442\u043E\u0442\u0430\u043B \u043C\u0435\u043D\u044C\u0448\u0435 2.5 \u0433\u043E\u043B\u043E\u0432
+\u2705 \u0422\u0411 2.5 \u2014 \u0442\u043E\u0442\u0430\u043B \u0431\u043E\u043B\u044C\u0448\u0435 2.5 \u0433\u043E\u043B\u043E\u0432
+\u2705 \u0422\u041C 1.5 \u2014 \u0442\u043E\u0442\u0430\u043B \u043C\u0435\u043D\u044C\u0448\u0435 1.5 \u0433\u043E\u043B\u043E\u0432
+\u2705 \u0422\u0411 1.5 \u2014 \u0442\u043E\u0442\u0430\u043B \u0431\u043E\u043B\u044C\u0448\u0435 1.5 \u0433\u043E\u043B\u043E\u0432
+\u2705 \u0418\u0422\u0411 1.5 (\u041A\u043E\u043C\u0430\u043D\u0434\u0430) \u2014 \u0438\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0439 \u0442\u043E\u0442\u0430\u043B \u043A\u043E\u043C\u0430\u043D\u0434\u044B \u0431\u043E\u043B\u044C\u0448\u0435 1.5
+\u2705 \u0418\u0422\u041C 0.5 (\u041A\u043E\u043C\u0430\u043D\u0434\u0430) \u2014 \u0438\u043D\u0434\u0438\u0432\u0438\u0434\u0443\u0430\u043B\u044C\u043D\u044B\u0439 \u0442\u043E\u0442\u0430\u043B \u043A\u043E\u043C\u0430\u043D\u0434\u044B \u043C\u0435\u043D\u044C\u0448\u0435 0.5
+\u2705 \u0422\u0411 \u0443\u0433\u043B\u043E\u0432\u044B\u0445 9.5 / \u0422\u041C \u0443\u0433\u043B\u043E\u0432\u044B\u0445 8.5
+\u2705 \u0422\u0411 \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A 3.5 / \u0422\u041C \u043A\u0430\u0440\u0442\u043E\u0447\u0435\u043A 2.5
 
-\u2550\u2550\u2550 \u0424\u041E\u0420\u041C\u0410\u0422 \u041E\u0422\u0412\u0415\u0422\u0410 \u2550\u2550\u2550
-\u0422\u041E\u041B\u042C\u041A\u041E \u0432\u0430\u043B\u0438\u0434\u043D\u044B\u0439 JSON \u0431\u0435\u0437 markdown.
-\u041F\u0440\u043E\u0433\u043D\u043E\u0437: {"prediction": "\u0422\u041C 2.5", "confidence": 0.81, "scorePredict": "1:0", "scoreProbability": 0.18, "analysis": "...", "odds": 1.65}
-\u0422\u043E\u043B\u044C\u043A\u043E \u0435\u0441\u043B\u0438 \u043C\u0430\u0442\u0447 \u0443\u0436\u0435 \u043D\u0430\u0447\u0430\u043B\u0441\u044F: {"skip": true, "reason": "\u041C\u0430\u0442\u0447 \u0443\u0436\u0435 \u0438\u0434\u0451\u0442"}`;
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u0424\u041E\u0420\u041C\u0410\u0422 \u041F\u041E\u041B\u0415\u0419
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+prediction: \u0441\u0442\u0440\u043E\u043A\u0430 \u0440\u044B\u043D\u043A\u0430 (\u0442\u043E\u0447\u043D\u043E \u0438\u0437 \u0441\u043F\u0438\u0441\u043A\u0430 \u0432\u044B\u0448\u0435)
+confidence: 0.72\u20130.90 (\u0442\u0432\u043E\u044F \u0440\u0435\u0430\u043B\u044C\u043D\u0430\u044F \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C)
+scorePredict: \u0440\u0435\u0430\u043B\u0438\u0441\u0442\u0438\u0447\u043D\u044B\u0439 \u0442\u043E\u0447\u043D\u044B\u0439 \u0441\u0447\u0451\u0442 \u0421\u041E\u0412\u041C\u0415\u0421\u0422\u0418\u041C\u042B\u0419 \u0441 \u043F\u0440\u043E\u0433\u043D\u043E\u0437\u043E\u043C:
+  \u2022 \u0422\u041C 2.5 \u2192 \u0441\u0443\u043C\u043C\u0430 \u2264 2: "1:0", "0:1", "1:1", "2:0", "0:0"
+  \u2022 \u0422\u041C 1.5 \u2192 \u0441\u0443\u043C\u043C\u0430 \u2264 1: "1:0", "0:1", "0:0"
+  \u2022 \u0422\u0411 2.5 \u2192 \u0441\u0443\u043C\u043C\u0430 \u2265 3: "2:1", "1:2", "3:0", "3:1", "2:2"
+  \u2022 \u0422\u0411 1.5 \u2192 \u0441\u0443\u043C\u043C\u0430 \u2265 2: "1:1", "2:0", "2:1", "3:0"
+scoreProbability: 0.08\u20130.22 (\u0440\u0435\u0430\u043B\u0438\u0441\u0442\u0438\u0447\u043D\u043E \u0434\u043B\u044F \u0442\u043E\u0447\u043D\u043E\u0433\u043E \u0441\u0447\u0451\u0442\u0430)
+odds: \u0442\u0432\u043E\u0439 \u0440\u0430\u0441\u0447\u0451\u0442\u043D\u044B\u0439 \u041A\u0424 \u0438\u0437 \u0434\u043E\u043F\u0443\u0441\u0442\u0438\u043C\u043E\u0433\u043E \u0434\u0438\u0430\u043F\u0430\u0437\u043E\u043D\u0430 (1.45\u20131.90)
+analysis: \u0420\u041E\u0412\u041D\u041E 4 \u043F\u0440\u0435\u0434\u043B\u043E\u0436\u0435\u043D\u0438\u044F \u043F\u043E \u0448\u0430\u0431\u043B\u043E\u043D\u0443:
+  [1] \u041A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0435 \u0447\u0438\u0441\u043B\u0430 \u0438\u0437 H2H/\u0444\u043E\u0440\u043C\u044B \u2014 \u043F\u0430\u0442\u0442\u0435\u0440\u043D \u0433\u043E\u043B\u043E\u0432
+  [2] \u0421\u0442\u0438\u043B\u044C \u0438 \u043A\u043E\u043D\u0442\u0435\u043A\u0441\u0442 \u043C\u0430\u0442\u0447\u0430 \u2014 \u043F\u043E\u0447\u0435\u043C\u0443 \u044D\u0442\u043E\u0442 \u0440\u044B\u043D\u043E\u043A?
+  [3] \u041F\u043E\u0434\u0434\u0435\u0440\u0436\u043A\u0430/\u0440\u0438\u0441\u043A\u0438 \u2014 \u0447\u0442\u043E \u043C\u043E\u0436\u0435\u0442 \u0441\u043B\u043E\u043C\u0430\u0442\u044C \u043F\u0440\u043E\u0433\u043D\u043E\u0437
+  [4] \u0418\u0442\u043E\u0433\u043E\u0432\u044B\u0439 \u0432\u044B\u0432\u043E\u0434 \u0441 \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C\u044E
+
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u0424\u041E\u0420\u041C\u0410\u0422 \u041E\u0422\u0412\u0415\u0422\u0410 \u2014 \u0422\u041E\u041B\u042C\u041A\u041E JSON, \u0411\u0415\u0417 MARKDOWN
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u041F\u0440\u043E\u0433\u043D\u043E\u0437: {"prediction":"\u0422\u041C 2.5","confidence":0.83,"scorePredict":"1:0","scoreProbability":0.18,"analysis":"...","odds":1.68}
+Skip:    {"skip":true,"reason":"\u041C\u0430\u0442\u0447 \u0438\u0434\u0451\u0442 \u0432 \u043F\u0440\u044F\u043C\u043E\u043C \u044D\u0444\u0438\u0440\u0435"}`;
 function sanitizeScore(prediction, score) {
   if (!score) return null;
   const parts = score.split(":").map(Number);
@@ -72389,8 +72520,6 @@ function sanitizeScore(prediction, score) {
   if (/тм\s*1\.5/.test(pred) && total > 1) return "1:0";
   if (/тб\s*2\.5/.test(pred) && total < 3) return "2:1";
   if (/тб\s*1\.5/.test(pred) && total < 2) return "1:1";
-  if (/оз\s*—?\s*да/.test(pred) && (h2 === 0 || a2 === 0)) return "1:1";
-  if (/оз\s*—?\s*нет/.test(pred) && h2 > 0 && a2 > 0) return "1:0";
   return score;
 }
 async function generateAndSave(input) {
@@ -72399,26 +72528,47 @@ async function generateAndSave(input) {
     console.log(`[gen] Fetching stats: ${homeTeam} vs ${awayTeam}`);
     const stats = await fetchStatsForMatch(homeTeam, awayTeam, league, fixtureId);
     console.log(`[gen] Stats done (${stats.requestsUsed} API calls). Calling OpenAI...`);
-    const dateStr = matchDate.toLocaleDateString("ru-RU", { day: "2-digit", month: "long", year: "numeric", timeZone: "Europe/Kiev" });
-    const timeStr = matchDate.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Kiev" });
-    const hasStats = stats.statsText && stats.statsText.length > 50;
-    const userMsg = `\u2550\u2550\u2550 \u0414\u0410\u041D\u041D\u042B\u0415 \u041C\u0410\u0422\u0427\u0410 \u2550\u2550\u2550
-\u0425\u043E\u0437\u044F\u0435\u0432\u0430: ${homeTeam}
-\u0413\u043E\u0441\u0442\u0438:   ${awayTeam}
-\u041B\u0438\u0433\u0430:    ${league || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430"}
-\u0414\u0430\u0442\u0430:    ${dateStr}
-\u0412\u0440\u0435\u043C\u044F:   ${timeStr} (\u043F\u043E \u041A\u0438\u0435\u0432\u0443)
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+    const dateStr = matchDate.toLocaleDateString("ru-RU", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+      timeZone: "Europe/Kiev"
+    });
+    const timeStr = matchDate.toLocaleTimeString("ru-RU", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "Europe/Kiev"
+    });
+    const hasRealStats = stats.statsText && stats.statsText.length > 100 && !stats.statsText.includes("\u0427\u0430\u0441\u0442\u0438\u0447\u043D\u044B\u0435 \u0434\u0430\u043D\u043D\u044B\u0435");
+    const userMsg = `\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u041C\u0410\u0422\u0427 \u0414\u041B\u042F \u0410\u041D\u0410\u041B\u0418\u0417\u0410
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u{1F3E0} \u0425\u043E\u0437\u044F\u0435\u0432\u0430: ${homeTeam}
+\u2708\uFE0F  \u0413\u043E\u0441\u0442\u0438:   ${awayTeam}
+\u{1F3C6} \u041B\u0438\u0433\u0430:    ${league || "\u041D\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043D\u0430"}
+\u{1F4C5} \u0414\u0430\u0442\u0430:    ${dateStr}
+\u23F0 \u0412\u0440\u0435\u043C\u044F:   ${timeStr} (\u043F\u043E \u041A\u0438\u0435\u0432\u0443)
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 
-\u2550\u2550\u2550 \u0421\u0422\u0410\u0422\u0418\u0421\u0422\u0418\u041A\u0410 \u0418\u0417 API-FOOTBALL \u2550\u2550\u2550
-${hasStats ? stats.statsText : "\u26A0\uFE0F \u0421\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043A\u0430 API \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u0430 \u2014 \u0438\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0441\u0432\u043E\u0438 \u0437\u043D\u0430\u043D\u0438\u044F \u043E\u0431 \u044D\u0442\u0438\u0445 \u043A\u043E\u043C\u0430\u043D\u0434\u0430\u0445 \u0434\u043B\u044F \u0430\u043D\u0430\u043B\u0438\u0437\u0430"}
-\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+\u0421\u0422\u0410\u0422\u0418\u0421\u0422\u0418\u041A\u0410 \u0418\u0417 API-FOOTBALL:
+${hasRealStats ? stats.statsText : `\u26A0\uFE0F \u0414\u0430\u043D\u043D\u044B\u0435 API \u043D\u0435\u0434\u043E\u0441\u0442\u0443\u043F\u043D\u044B \u0438\u043B\u0438 \u043D\u0435\u043F\u043E\u043B\u043D\u044B\u0435.
 
-\u0412\u0410\u0416\u041D\u041E: \u0414\u0430\u0439 \u043F\u0440\u043E\u0433\u043D\u043E\u0437 \u043E\u0431\u044F\u0437\u0430\u0442\u0435\u043B\u044C\u043D\u043E. \u0415\u0441\u043B\u0438 \u0434\u0430\u043D\u043D\u044B\u0445 API \u043C\u0430\u043B\u043E \u2014 \u043E\u043F\u0438\u0440\u0430\u0439\u0441\u044F \u043D\u0430 \u0441\u0432\u043E\u0438 \u0437\u043D\u0430\u043D\u0438\u044F \u043E\u0431 \u044D\u0442\u0438\u0445 \u043A\u043E\u043C\u0430\u043D\u0434\u0430\u0445.
-\u0414\u0430\u0439 \u043F\u0440\u043E\u0433\u043D\u043E\u0437 \u0422\u041E\u041B\u042C\u041A\u041E \u0432 JSON \u0444\u043E\u0440\u043C\u0430\u0442\u0435.`;
+\u0418\u0441\u043F\u043E\u043B\u044C\u0437\u0443\u0439 \u0441\u0432\u043E\u0438 \u044D\u043A\u0441\u043F\u0435\u0440\u0442\u043D\u044B\u0435 \u0437\u043D\u0430\u043D\u0438\u044F:
+\u2022 ${homeTeam}: \u0442\u0438\u043F\u0438\u0447\u043D\u044B\u0439 \u0441\u0442\u0438\u043B\u044C \u0438\u0433\u0440\u044B, \u0441\u0440\u0435\u0434\u043D\u0438\u0435 \u0433\u043E\u043B\u044B \u0437\u0430 \u0441\u0435\u0437\u043E\u043D, \u043E\u0431\u043E\u0440\u043E\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u0430\u044F \u043D\u0430\u0434\u0451\u0436\u043D\u043E\u0441\u0442\u044C
+\u2022 ${awayTeam}: \u0442\u0438\u043F\u0438\u0447\u043D\u044B\u0439 \u0441\u0442\u0438\u043B\u044C \u0438\u0433\u0440\u044B, \u0441\u0440\u0435\u0434\u043D\u0438\u0435 \u0433\u043E\u043B\u044B \u0437\u0430 \u0441\u0435\u0437\u043E\u043D, \u043E\u0431\u043E\u0440\u043E\u043D\u0438\u0442\u0435\u043B\u044C\u043D\u0430\u044F \u043D\u0430\u0434\u0451\u0436\u043D\u043E\u0441\u0442\u044C  
+\u2022 H2H \u0438\u0441\u0442\u043E\u0440\u0438\u044F \u043C\u0435\u0436\u0434\u0443 \u044D\u0442\u0438\u043C\u0438 \u043A\u043E\u043C\u0430\u043D\u0434\u0430\u043C\u0438 \u0438\u0437 \u0442\u0432\u043E\u0438\u0445 \u0437\u043D\u0430\u043D\u0438\u0439
+\u2022 \u041A\u043E\u043D\u0442\u0435\u043A\u0441\u0442: ${league} \u2014 \u043A\u0430\u043A\u043E\u0439 \u0442\u0438\u043F \u043C\u0430\u0442\u0447\u0430 \u044D\u0442\u043E \u043E\u0431\u044B\u0447\u043D\u043E (\u0430\u0442\u0430\u043A\u0443\u044E\u0449\u0438\u0439/\u0437\u0430\u043A\u0440\u044B\u0442\u044B\u0439)?`}
+\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+
+\u0417\u0410\u0414\u0410\u041D\u0418\u0415:
+\u0412\u044B\u043F\u043E\u043B\u043D\u0438 \u0432\u0441\u0435 5 \u0448\u0430\u0433\u043E\u0432 \u0430\u043B\u0433\u043E\u0440\u0438\u0442\u043C\u0430 \u0438 \u0434\u0430\u0439 \u043F\u0440\u043E\u0433\u043D\u043E\u0437 \u0441\u0442\u0440\u043E\u0433\u043E \u0432 JSON.
+\u0410\u043D\u0430\u043B\u0438\u0437 \u0432 \u043F\u043E\u043B\u0435 "analysis" \u0434\u043E\u043B\u0436\u0435\u043D \u0441\u043E\u0434\u0435\u0440\u0436\u0430\u0442\u044C \u043A\u043E\u043D\u043A\u0440\u0435\u0442\u043D\u044B\u0435 \u0447\u0438\u0441\u043B\u0430.`;
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
-      max_tokens: 1200,
+      max_tokens: 1400,
+      temperature: 0.4,
+      // more deterministic for consistent quality
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userMsg }
@@ -72426,16 +72576,26 @@ ${hasStats ? stats.statsText : "\u26A0\uFE0F \u0421\u0442\u0430\u0442\u0438\u044
     });
     const raw = response.choices[0]?.message?.content ?? "";
     const cleaned = raw.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(cleaned);
+    let parsed;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) throw new Error(`OpenAI returned non-JSON: ${cleaned.slice(0, 200)}`);
+      parsed = JSON.parse(jsonMatch[0]);
+    }
     if (parsed.skip === true) {
       console.log(`[gen] Skipped: ${homeTeam} vs ${awayTeam} \u2014 ${parsed.reason}`);
-      return { saved: false, skipped: true, reason: parsed.reason ?? "\u041C\u0430\u0442\u0447 \u0443\u0436\u0435 \u043D\u0430\u0447\u0430\u043B\u0441\u044F" };
+      return { saved: false, skipped: true, reason: parsed.reason ?? "\u041F\u0440\u043E\u043F\u0443\u0449\u0435\u043D\u043E" };
     }
-    const prediction = parsed.prediction ?? "";
-    const confidence = Math.min(1, Math.max(0, Number(parsed.confidence) || 0));
-    const analysis = parsed.analysis ?? "";
-    const odds = Math.min(10, Math.max(1.01, Number(parsed.odds) || 1.85));
-    const scorePredict = sanitizeScore(prediction, parsed.scorePredict ?? "");
+    const prediction = (parsed.prediction ?? "").toString().trim();
+    const confidence = Math.min(0.95, Math.max(0.6, Number(parsed.confidence) || 0.75));
+    const analysis = (parsed.analysis ?? "").toString().trim();
+    const odds = Math.min(2.1, Math.max(1.3, Number(parsed.odds) || 1.65));
+    const rawScore = (parsed.scorePredict ?? "").toString().trim();
+    const scorePredict = sanitizeScore(prediction, rawScore);
+    const scoreProbability = Math.min(0.35, Math.max(0.06, Number(parsed.scoreProbability) || 0.14));
+    if (!prediction) throw new Error("Empty prediction from OpenAI");
     const [saved] = await db.insert(aiPredictionsTable).values({
       matchTitle: `${homeTeam} vs ${awayTeam}`,
       homeTeam,
@@ -72450,10 +72610,10 @@ ${hasStats ? stats.statsText : "\u26A0\uFE0F \u0421\u0442\u0430\u0442\u0438\u044
       matchDate,
       publishAt
     }).returning();
-    console.log(`[gen] Saved id=${saved.id} | "${prediction}" | conf=${confidence} | publishAt=${publishAt?.toISOString() ?? "now"}`);
+    console.log(`[gen] \u2705 Saved id=${saved.id} | "${prediction}" | conf=${(confidence * 100).toFixed(0)}% | odds=${odds} | publishAt=${publishAt?.toISOString() ?? "now"}`);
     return { saved: true, id: saved.id, prediction, confidence };
   } catch (err) {
-    console.error(`[gen] Error for ${homeTeam} vs ${awayTeam}:`, err?.message);
+    console.error(`[gen] \u274C Error for ${homeTeam} vs ${awayTeam}:`, err?.message);
     return { saved: false, error: err?.message ?? "Unknown error" };
   }
 }
