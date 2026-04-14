@@ -1,15 +1,21 @@
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { eq, and, asc, or } from "drizzle-orm";
-import { db, predictionButtonsTable } from "@workspace/db";
+import { db, predictionButtonsTable, admins } from "@workspace/db";
 import { z } from "zod";
 
 const router: IRouter = Router();
 
-const ADMIN_ID = process.env["ADMIN_ID"] ?? "8589717818";
+const SUPER_ADMIN_ID = process.env["ADMIN_ID"] ?? "8589717818";
 
-function adminGuard(req: Request, res: Response, next: NextFunction): void {
-  const adminId = req.headers["x-admin-id"];
-  if (adminId !== ADMIN_ID) {
+async function isAdminId(telegramId: string): Promise<boolean> {
+  if (telegramId === SUPER_ADMIN_ID) return true;
+  const result = await db.select().from(admins).where(eq(admins.telegramId, telegramId)).limit(1);
+  return result.length > 0;
+}
+
+async function adminGuard(req: Request, res: Response, next: NextFunction): Promise<void> {
+  const adminId = req.headers["x-admin-id"] as string;
+  if (!adminId || !(await isAdminId(adminId))) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }

@@ -65090,10 +65090,15 @@ var import_express8 = __toESM(require_express2(), 1);
 init_drizzle_orm();
 init_src();
 var router8 = (0, import_express8.Router)();
-var ADMIN_ID = process.env["ADMIN_ID"] ?? "8589717818";
-function adminGuard2(req, res, next) {
+var SUPER_ADMIN_ID2 = process.env["ADMIN_ID"] ?? "8589717818";
+async function isAdminId(telegramId) {
+  if (telegramId === SUPER_ADMIN_ID2) return true;
+  const result = await db.select().from(admins).where(eq(admins.telegramId, telegramId)).limit(1);
+  return result.length > 0;
+}
+async function adminGuard2(req, res, next) {
   const adminId = req.headers["x-admin-id"];
-  if (adminId !== ADMIN_ID) {
+  if (!adminId || !await isAdminId(adminId)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -65249,24 +65254,24 @@ var import_express9 = __toESM(require_express2(), 1);
 init_drizzle_orm();
 init_src();
 var router9 = (0, import_express9.Router)();
-var SUPER_ADMIN_ID2 = process.env["ADMIN_ID"] ?? "8589717818";
+var SUPER_ADMIN_ID3 = process.env["ADMIN_ID"] ?? "8589717818";
 (async () => {
   try {
     await db.insert(admins).values({
-      telegramId: SUPER_ADMIN_ID2,
+      telegramId: SUPER_ADMIN_ID3,
       addedBy: null,
       isSuperAdmin: true
     }).onConflictDoNothing();
   } catch {
   }
 })();
-async function isAdminId(telegramId) {
-  if (telegramId === SUPER_ADMIN_ID2) return true;
+async function isAdminId2(telegramId) {
+  if (telegramId === SUPER_ADMIN_ID3) return true;
   const result = await db.select().from(admins).where(eq(admins.telegramId, telegramId)).limit(1);
   return result.length > 0;
 }
 async function isSuperAdminId(telegramId) {
-  if (telegramId === SUPER_ADMIN_ID2) return true;
+  if (telegramId === SUPER_ADMIN_ID3) return true;
   const result = await db.select().from(admins).where(eq(admins.telegramId, telegramId)).limit(1);
   return result.length > 0 && result[0].isSuperAdmin === true;
 }
@@ -65277,7 +65282,7 @@ router9.get("/check", async (req, res) => {
     return;
   }
   try {
-    const adminCheck = await isAdminId(id);
+    const adminCheck = await isAdminId2(id);
     const superCheck = adminCheck ? await isSuperAdminId(id) : false;
     res.json({ isAdmin: adminCheck, isSuperAdmin: superCheck });
   } catch {
@@ -65286,7 +65291,7 @@ router9.get("/check", async (req, res) => {
 });
 async function adminGuard3(req, res, next) {
   const adminId = req.headers["x-admin-id"];
-  if (!adminId || !await isAdminId(adminId)) {
+  if (!adminId || !await isAdminId2(adminId)) {
     res.status(403).json({ error: "Forbidden" });
     return;
   }
@@ -65315,7 +65320,7 @@ router9.post("/", superAdminGuard, async (req, res) => {
     res.status(400).json({ error: "telegramId is required" });
     return;
   }
-  if (telegramId === SUPER_ADMIN_ID2) {
+  if (telegramId === SUPER_ADMIN_ID3) {
     res.status(400).json({ error: "Cannot add super admin this way" });
     return;
   }
@@ -65336,7 +65341,7 @@ router9.post("/", superAdminGuard, async (req, res) => {
 });
 router9.delete("/:telegramId", superAdminGuard, async (req, res) => {
   const { telegramId } = req.params;
-  if (telegramId === SUPER_ADMIN_ID2) {
+  if (telegramId === SUPER_ADMIN_ID3) {
     res.status(403).json({ error: "Cannot remove super admin" });
     return;
   }
@@ -73064,9 +73069,9 @@ init_src();
 init_schema2();
 init_drizzle_orm();
 var router13 = (0, import_express13.Router)();
-var SUPER_ADMIN_ID3 = process.env["ADMIN_ID"] ?? "8589717818";
+var SUPER_ADMIN_ID4 = process.env["ADMIN_ID"] ?? "8589717818";
 async function isAdmin2(telegramId) {
-  if (telegramId === SUPER_ADMIN_ID3) return true;
+  if (telegramId === SUPER_ADMIN_ID4) return true;
   try {
     const { admins: admins2 } = await Promise.resolve().then(() => (init_src(), src_exports));
     const result = await db.select().from(admins2).where(eq(admins2.telegramId, telegramId)).limit(1);
@@ -73558,9 +73563,9 @@ var storage_default = router14;
 var import_express15 = __toESM(require_express2(), 1);
 init_src();
 init_drizzle_orm();
-var SUPER_ADMIN_ID4 = process.env["ADMIN_ID"] ?? "8589717818";
+var SUPER_ADMIN_ID5 = process.env["ADMIN_ID"] ?? "8589717818";
 async function isAdmin3(telegramId) {
-  if (telegramId === SUPER_ADMIN_ID4) return true;
+  if (telegramId === SUPER_ADMIN_ID5) return true;
   try {
     const { admins: admins2 } = await Promise.resolve().then(() => (init_src(), src_exports));
     const result = await db.select().from(admins2).where(eq(admins2.telegramId, telegramId)).limit(1);

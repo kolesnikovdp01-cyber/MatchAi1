@@ -1378,6 +1378,7 @@ export default function AdminPanel() {
   const [adminId, setAdminId] = useState<string | null>(() => localStorage.getItem(ADMIN_STORAGE_KEY));
   const [inputId, setInputId] = useState("");
   const [checking, setChecking] = useState(false);
+  const [tgLoginFailed, setTgLoginFailed] = useState(false);
   const [activeTab, setActiveTab] = useState<"ai" | "author" | "stats" | "odds" | "apistat" | "access" | "ads" | "users">("ai");
   const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [adminsList, setAdminsList] = useState<AdminEntry[]>([]);
@@ -1411,18 +1412,22 @@ export default function AdminPanel() {
       if (tgId) {
         const idStr = String(tgId);
         setInputId(idStr);
-        // Auto-login attempt
+        // Auto-login attempt via admins/check endpoint
         (async () => {
           setChecking(true);
           try {
-            const res = await fetch(apiUrl("/admin/buttons?type=ai"), {
-              headers: { "X-Admin-Id": idStr },
-            });
+            const res = await fetch(apiUrl(`/admins/check?id=${encodeURIComponent(idStr)}`));
             if (res.ok) {
-              localStorage.setItem(ADMIN_STORAGE_KEY, idStr);
-              setAdminId(idStr);
+              const data = await res.json();
+              if (data.isAdmin) {
+                localStorage.setItem(ADMIN_STORAGE_KEY, idStr);
+                setAdminId(idStr);
+                setChecking(false);
+                return;
+              }
             }
           } catch { /* ignore */ }
+          setTgLoginFailed(true);
           setChecking(false);
         })();
       }
@@ -1433,16 +1438,17 @@ export default function AdminPanel() {
     if (!inputId.trim()) return;
     setChecking(true);
     try {
-      const res = await fetch(apiUrl("/admin/buttons?type=ai"), {
-        headers: { "X-Admin-Id": inputId.trim() },
-      });
-      if (res.status === 403) {
-        toast({ title: "Неверный ID", variant: "destructive" });
-        setChecking(false);
-        return;
+      const res = await fetch(apiUrl(`/admins/check?id=${encodeURIComponent(inputId.trim())}`));
+      if (res.ok) {
+        const data = await res.json();
+        if (data.isAdmin) {
+          localStorage.setItem(ADMIN_STORAGE_KEY, inputId.trim());
+          setAdminId(inputId.trim());
+          setChecking(false);
+          return;
+        }
       }
-      localStorage.setItem(ADMIN_STORAGE_KEY, inputId.trim());
-      setAdminId(inputId.trim());
+      toast({ title: "Неверный ID или нет доступа", variant: "destructive" });
     } catch {
       toast({ title: "Ошибка соединения", variant: "destructive" });
     }
@@ -1545,6 +1551,7 @@ export default function AdminPanel() {
 
   if (!adminId) {
     const tgDetected = !!(window as any).Telegram?.WebApp?.initDataUnsafe?.user?.id;
+    const showManualInput = !tgDetected || tgLoginFailed;
     return (
       <div className="min-h-screen flex items-center justify-center" style={{ background: "#0a0a0a" }}>
         <button
@@ -1563,13 +1570,14 @@ export default function AdminPanel() {
             <p className="text-sm mt-1" style={{ color: "rgba(255,255,255,0.4)" }}>MatchAi1 · Панель управления</p>
           </div>
           <div className="rounded-2xl p-6 space-y-4" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-            {tgDetected ? (
+            {tgDetected && checking && (
               <div className="text-center py-2">
                 <p className="text-sm font-mono" style={{ color: "rgba(255,255,255,0.5)" }}>
-                  {checking ? "⏳ Проверка Telegram ID..." : "Определение Telegram ID..."}
+                  ⏳ Проверка Telegram ID...
                 </p>
               </div>
-            ) : (
+            )}
+            {showManualInput && !checking && (
               <div className="space-y-2">
                 <Label className="text-xs font-mono uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.5)" }}>Ваш Telegram ID</Label>
                 <Input
@@ -1580,12 +1588,14 @@ export default function AdminPanel() {
                   onKeyDown={e => e.key === "Enter" && login()}
                   className="bg-black/40 border-white/10 text-white placeholder:text-white/20"
                 />
-                <p className="text-[11px]" style={{ color: "rgba(255,255,255,0.25)" }}>
-                  Откройте приложение через Telegram для автоматического входа
-                </p>
+                {tgLoginFailed && (
+                  <p className="text-[11px]" style={{ color: "rgba(245,158,11,0.6)" }}>
+                    Автоматический вход не удался — введите ID вручную
+                  </p>
+                )}
               </div>
             )}
-            {!tgDetected && (
+            {showManualInput && !checking && (
               <Button onClick={login} disabled={checking || !inputId} className="w-full gap-2">
                 <ShieldCheck className="h-4 w-4" />
                 {checking ? "Проверка..." : "Войти"}
