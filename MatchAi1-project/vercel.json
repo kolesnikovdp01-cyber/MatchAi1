@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "buildCommand": "npm install -g pnpm && pnpm install && BASE_PATH=/ pnpm --filter @workspace/football-analytics run build && pnpm --filter @workspace/api-server run build",
+  "outputDirectory": "artifacts/football-analytics/dist/public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api"
+    }
+  ]
+}
