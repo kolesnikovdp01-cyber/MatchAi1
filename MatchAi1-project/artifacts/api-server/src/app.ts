@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import pinoHttp from "pino-http";
 import path from "path";
@@ -42,5 +42,13 @@ if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
     res.sendFile(path.join(staticDir, "index.html"));
   });
 }
+
+// Global error handler — catches any unhandled errors in route handlers
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error({ err }, "Unhandled route error");
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 export default app;
