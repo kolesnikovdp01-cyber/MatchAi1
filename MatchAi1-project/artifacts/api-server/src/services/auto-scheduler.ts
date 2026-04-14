@@ -126,11 +126,11 @@ export async function runDailyGeneration(triggeredBy: "cron" | "manual" = "cron"
 
       if (!homeTeam || !awayTeam || isNaN(matchDate.getTime())) continue;
 
-      // Skip if match starts in less than 2.5h (not enough time to prepare)
+      // Skip if match starts in less than 45 min (too late to prepare)
       const now = new Date();
       const timeUntilMatch = matchDate.getTime() - now.getTime();
-      if (timeUntilMatch < 2.5 * 60 * 60 * 1000) {
-        console.log(`[scheduler] Skipping ${homeTeam} vs ${awayTeam} — starts too soon`);
+      if (timeUntilMatch < 45 * 60 * 1000) {
+        console.log(`[scheduler] Skipping ${homeTeam} vs ${awayTeam} — starts in less than 45 min`);
         continue;
       }
 
