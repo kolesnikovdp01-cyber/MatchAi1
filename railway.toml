@@ -4,7 +4,5 @@
 
   [deploy]
   startCommand = "cd MatchAi1-project && node --enable-source-maps ./artifacts/api-server/dist/index.mjs"
-  healthcheckPath = "/api/healthz"
-  healthcheckTimeout = 30
   restartPolicyType = "on_failure"
   
