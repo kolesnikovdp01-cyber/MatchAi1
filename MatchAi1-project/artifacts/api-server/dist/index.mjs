@@ -64489,6 +64489,9 @@ var ListAiPredictionsResponseItem = objectType({
   matchDate: coerce.date(),
   analysis: stringType(),
   scorePredict: stringType().nullable().optional(),
+  scoreProbability: numberType().nullable().optional(),
+  riskLevel: stringType().nullable().optional(),
+  publishAt: coerce.date().nullable().optional(),
   createdAt: coerce.date()
 });
 var ListAiPredictionsResponse = arrayType(
@@ -64510,6 +64513,9 @@ var GetAiPredictionResponse = objectType({
   matchDate: coerce.date(),
   analysis: stringType(),
   scorePredict: stringType().nullable().optional(),
+  scoreProbability: numberType().nullable().optional(),
+  riskLevel: stringType().nullable().optional(),
+  publishAt: coerce.date().nullable().optional(),
   createdAt: coerce.date()
 });
 var listAuthorPredictionsQueryLimitDefault = 20;

@@ -19,5 +19,9 @@ export interface AiPrediction {
   status: AiPredictionStatus;
   matchDate: Date;
   analysis: string;
+  scorePredict?: string | null;
+  scoreProbability?: number | null;
+  riskLevel?: string | null;
+  publishAt?: Date | null;
   createdAt: Date;
 }

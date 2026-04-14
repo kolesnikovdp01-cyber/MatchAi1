@@ -41,6 +41,9 @@ export const ListAiPredictionsResponseItem = zod.object({
   matchDate: zod.coerce.date(),
   analysis: zod.string(),
   scorePredict: zod.string().nullable().optional(),
+  scoreProbability: zod.number().nullable().optional(),
+  riskLevel: zod.string().nullable().optional(),
+  publishAt: zod.coerce.date().nullable().optional(),
   createdAt: zod.coerce.date(),
 });
 export const ListAiPredictionsResponse = zod.array(
@@ -67,6 +70,9 @@ export const GetAiPredictionResponse = zod.object({
   matchDate: zod.coerce.date(),
   analysis: zod.string(),
   scorePredict: zod.string().nullable().optional(),
+  scoreProbability: zod.number().nullable().optional(),
+  riskLevel: zod.string().nullable().optional(),
+  publishAt: zod.coerce.date().nullable().optional(),
   createdAt: zod.coerce.date(),
 });
 

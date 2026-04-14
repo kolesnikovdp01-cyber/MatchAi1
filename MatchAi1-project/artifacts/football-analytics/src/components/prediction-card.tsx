@@ -126,10 +126,10 @@ export function PredictionCard({ prediction, type }: PredictionCardProps) {
   const aiPred     = prediction as AiPrediction;
   const authorPred = prediction as AuthorPrediction;
 
-  const scorePredict      = isAi && "scorePredict"      in aiPred ? aiPred.scorePredict      : null;
-  const confidence        = isAi && "confidence"        in aiPred ? aiPred.confidence        : null;
-  const scoreProbability  = isAi && "scoreProbability"  in aiPred ? (aiPred as any).scoreProbability as number | null | undefined : null;
-  const riskLevel         = isAi && "riskLevel"         in aiPred ? (aiPred as any).riskLevel as string | null | undefined : null;
+  const scorePredict     = isAi ? aiPred.scorePredict     ?? null : null;
+  const confidence       = isAi ? aiPred.confidence       ?? null : null;
+  const scoreProbability = isAi ? aiPred.scoreProbability ?? null : null;
+  const riskLevel        = isAi ? aiPred.riskLevel        ?? null : null;
 
   const predictionTranslated = translatePrediction(prediction.prediction, lang);
 
