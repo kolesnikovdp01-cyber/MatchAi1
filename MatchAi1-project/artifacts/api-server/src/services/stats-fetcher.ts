@@ -268,6 +268,7 @@ export async function fetchStatsForMatch(
   let awayTeamId: number | undefined;
   let leagueId: number | undefined;
   let resolvedFixtureId: number | undefined = fixtureId;
+  let bookmakerOdds: BookmakerOdds | undefined;
 
   const usageBefore = await getTodayUsage();
 
@@ -443,7 +444,6 @@ export async function fetchStatsForMatch(
     }
 
     // 10. Bookmaker odds
-    let bookmakerOdds: BookmakerOdds | undefined;
     if (resolvedFixtureId) {
       try {
         const oddsData = await fetchOdds(resolvedFixtureId);

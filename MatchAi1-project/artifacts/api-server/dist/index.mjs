@@ -72143,6 +72143,7 @@ async function fetchStatsForMatch(homeTeam, awayTeam, leagueHint, fixtureId) {
   let awayTeamId;
   let leagueId;
   let resolvedFixtureId = fixtureId;
+  let bookmakerOdds;
   const usageBefore = await getTodayUsage();
   try {
     const [homeResults, awayResults] = await Promise.all([
@@ -72326,7 +72327,6 @@ ${lines.join("\n")}`);
         console.warn("[stats] away form error:", e2.message);
       }
     }
-    let bookmakerOdds2;
     if (resolvedFixtureId) {
       try {
         const oddsData = await fetchOdds(resolvedFixtureId);
@@ -72389,7 +72389,7 @@ ${lines.join("\n")}`);
             parts.push(`\u{1F4B0} \u0411\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u044B (\u0440\u0435\u0430\u043B\u044C\u043D\u044B\u0435 \u041A\u0424):
 ${oddsLines.join("\n")}`);
           }
-          if (Object.keys(structured).length > 0) bookmakerOdds2 = structured;
+          if (Object.keys(structured).length > 0) bookmakerOdds = structured;
         }
       } catch (e2) {
         console.warn("[stats] odds error:", e2.message);
