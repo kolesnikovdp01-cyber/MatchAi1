@@ -7,8 +7,8 @@ import { useLanguage } from "@/hooks/use-language";
 
 export default function Dashboard() {
   const { t } = useLanguage();
-  const { data: aiPredictions, isLoading: isLoadingAi } = useListAiPredictions({ todayOnly: true, limit: 20, status: "pending" });
-  const { data: authorPredictions, isLoading: isLoadingAuthor } = useListAuthorPredictions({ todayOnly: true, limit: 20, status: "pending" });
+  const { data: aiPredictions, isLoading: isLoadingAi } = useListAiPredictions({ todayOnly: false, limit: 20, status: "pending" });
+  const { data: authorPredictions, isLoading: isLoadingAuthor } = useListAuthorPredictions({ todayOnly: false, limit: 20, status: "pending" });
 
   const isLoading = isLoadingAi || isLoadingAuthor;
   const hasAi = !!aiPredictions && aiPredictions.length > 0;
