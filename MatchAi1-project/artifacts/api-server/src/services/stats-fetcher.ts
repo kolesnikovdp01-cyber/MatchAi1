@@ -165,6 +165,16 @@ export async function searchTeam(name: string): Promise<any[]> {
   return getOrFetch(key, "team_search", 24 * 7, () => apiGet(`/teams?search=${encodeURIComponent(name)}`));
 }
 
+export async function fetchOdds(fixtureId: number): Promise<any[]> {
+  const key = `odds:${fixtureId}`;
+  return getOrFetch(key, "odds", 1, () => apiGet(`/odds?fixture=${fixtureId}`));
+}
+
+export async function fetchEvents(fixtureId: number): Promise<any[]> {
+  const key = `events:${fixtureId}`;
+  return getOrFetch(key, "events", 1, () => apiGet(`/fixtures/events?fixture=${fixtureId}`));
+}
+
 // ─── Main: fetch rich stats for AI generation ─────────────────────────────────
 
 export interface MatchStats {
@@ -329,7 +339,47 @@ export async function fetchStatsForMatch(
       } catch (e: any) { console.warn("[stats] away form error:", e.message); }
     }
 
-    // 7. Standings position
+    // 7. Bookmaker odds (if fixtureId is known)
+    if (resolvedFixtureId) {
+      try {
+        const oddsData = await fetchOdds(resolvedFixtureId);
+        if (oddsData.length > 0) {
+          const bookmaker = oddsData[0];
+          const bets: any[] = bookmaker?.bookmakers?.[0]?.bets ?? bookmaker?.bets ?? [];
+          const oddsLines: string[] = [];
+          for (const bet of bets) {
+            const name: string = bet.name ?? "";
+            const vals: any[] = bet.values ?? [];
+            if (/match winner/i.test(name) || /1x2/i.test(name)) {
+              const h = vals.find((v: any) => v.value === "Home")?.odd;
+              const d = vals.find((v: any) => v.value === "Draw")?.odd;
+              const a = vals.find((v: any) => v.value === "Away")?.odd;
+              if (h && d && a) oddsLines.push(`  П1/X/П2: ${h} / ${d} / ${a}`);
+            } else if (/goals over\/under/i.test(name) || /total goals/i.test(name)) {
+              const o25 = vals.find((v: any) => v.value === "Over 2.5")?.odd;
+              const u25 = vals.find((v: any) => v.value === "Under 2.5")?.odd;
+              const o15 = vals.find((v: any) => v.value === "Over 1.5")?.odd;
+              const u15 = vals.find((v: any) => v.value === "Under 1.5")?.odd;
+              if (o25 && u25) oddsLines.push(`  ТБ/ТМ 2.5 голов: ${o25} / ${u25}`);
+              if (o15 && u15) oddsLines.push(`  ТБ/ТМ 1.5 голов: ${o15} / ${u15}`);
+            } else if (/both teams score/i.test(name)) {
+              const yes = vals.find((v: any) => v.value === "Yes")?.odd;
+              const no = vals.find((v: any) => v.value === "No")?.odd;
+              if (yes && no) oddsLines.push(`  ОЗ Да/Нет: ${yes} / ${no}`);
+            } else if (/corners/i.test(name)) {
+              const o95 = vals.find((v: any) => v.value === "Over 9.5")?.odd;
+              const u95 = vals.find((v: any) => v.value === "Under 9.5")?.odd;
+              if (o95 && u95) oddsLines.push(`  Угловые ТБ/ТМ 9.5: ${o95} / ${u95}`);
+            }
+          }
+          if (oddsLines.length > 0) {
+            parts.push(`💰 Коэффициенты букмекеров:\n${oddsLines.join("\n")}`);
+          }
+        }
+      } catch (e: any) { console.warn("[stats] odds error:", e.message); }
+    }
+
+    // 8. Standings position
     if (leagueId && TOP_LEAGUES.includes(leagueId)) {
       try {
         const standings = await fetchStandings(leagueId);

@@ -54038,11 +54038,13 @@ var init_src = __esm({
     init_schema2();
     ({ Pool: Pool3 } = esm_default);
     if (!process.env.DATABASE_URL) {
-      throw new Error(
-        "DATABASE_URL must be set. Did you forget to provision a database?"
+      console.warn(
+        "WARNING: DATABASE_URL is not set. Database features will not work."
       );
     }
-    pool = new Pool3({ connectionString: process.env.DATABASE_URL });
+    pool = new Pool3({
+      connectionString: process.env.DATABASE_URL ?? "postgres://localhost/placeholder"
+    });
     db = drizzle(pool, { schema: schema_exports });
   }
 });
@@ -73540,22 +73542,29 @@ app.use((0, import_cors.default)());
 app.use(import_express17.default.json());
 app.use(import_express17.default.urlencoded({ extended: true }));
 app.use("/api", routes_default);
-if (process.env.NODE_ENV === "production") {
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const staticDir = path.resolve(__dirname2, "../../football-analytics/dist/public");
   app.use(import_express17.default.static(staticDir));
-  app.get("*", (_req, res) => {
+  app.get("/{*splat}", (_req, res) => {
     res.sendFile(path.join(staticDir, "index.html"));
   });
 }
+app.use((err, _req, res, _next) => {
+  logger.error({ err }, "Unhandled route error");
+  if (!res.headersSent) {
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 var app_default = app;
 
 // src/index.ts
-var rawPort = process.env["PORT"];
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided."
-  );
-}
+process.on("unhandledRejection", (reason) => {
+  logger.warn({ reason }, "Unhandled promise rejection (ignored)");
+});
+process.on("uncaughtException", (err) => {
+  logger.warn({ err }, "Uncaught exception (ignored)");
+});
+var rawPort = process.env["PORT"] ?? "3000";
 var port = Number(rawPort);
 if (Number.isNaN(port) || port <= 0) {
   throw new Error(`Invalid PORT value: "${rawPort}"`);
@@ -73568,7 +73577,11 @@ app_default.listen(port, (err) => {
   logger.info({ port }, "Server listening");
   setTimeout(() => {
     startupFetch().catch((e2) => logger.warn({ err: e2 }, "stats startup fetch failed"));
-    startDailyScheduler();
+    try {
+      startDailyScheduler();
+    } catch (e2) {
+      logger.warn({ err: e2 }, "auto-scheduler start failed");
+    }
   }, 3e3);
 });
 /*! Bundled license information:
