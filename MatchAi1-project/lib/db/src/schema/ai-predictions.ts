@@ -15,6 +15,8 @@ export const aiPredictionsTable = pgTable("ai_predictions", {
   matchDate: timestamp("match_date", { withTimezone: true }).notNull(),
   analysis: text("analysis").notNull(),
   scorePredict: text("score_predict"),
+  scoreProbability: real("score_probability"),
+  riskLevel: text("risk_level"),
   publishAt: timestamp("publish_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

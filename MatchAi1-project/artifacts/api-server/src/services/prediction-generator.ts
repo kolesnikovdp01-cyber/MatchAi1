@@ -328,6 +328,8 @@ ${bmSummary}
       prediction,
       confidence,
       scorePredict,
+      scoreProbability,
+      riskLevel,
       analysis,
       odds,
       status: "pending",

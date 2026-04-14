@@ -126,8 +126,10 @@ export function PredictionCard({ prediction, type }: PredictionCardProps) {
   const aiPred     = prediction as AiPrediction;
   const authorPred = prediction as AuthorPrediction;
 
-  const scorePredict = isAi && "scorePredict" in aiPred ? aiPred.scorePredict : null;
-  const confidence   = isAi && "confidence"   in aiPred ? aiPred.confidence   : null;
+  const scorePredict      = isAi && "scorePredict"      in aiPred ? aiPred.scorePredict      : null;
+  const confidence        = isAi && "confidence"        in aiPred ? aiPred.confidence        : null;
+  const scoreProbability  = isAi && "scoreProbability"  in aiPred ? (aiPred as any).scoreProbability as number | null | undefined : null;
+  const riskLevel         = isAi && "riskLevel"         in aiPred ? (aiPred as any).riskLevel as string | null | undefined : null;
 
   const predictionTranslated = translatePrediction(prediction.prediction, lang);
 
@@ -147,7 +149,9 @@ export function PredictionCard({ prediction, type }: PredictionCardProps) {
   const baseAccent = isAi ? "#22c55e" : "#f59e0b";
   const accentColor = baseAccent; // always keep type color unchanged
   const confPct = confidence !== null && confidence !== undefined ? Math.round(confidence * 100) : null;
-  const scorePct = confPct !== null ? Math.round(Math.max(confPct * 0.38, 8)) : null;
+  const scorePct = scoreProbability != null
+    ? Math.round(scoreProbability * 100)
+    : confPct !== null ? Math.round(Math.max(confPct * 0.11, 5)) : null;
 
   return (
     <div
@@ -307,6 +311,24 @@ export function PredictionCard({ prediction, type }: PredictionCardProps) {
           </>
         </div>
       </div>
+
+      {/* ── Risk Level Badge (AI only) ── */}
+      {isAi && riskLevel && (() => {
+        const rl = riskLevel.toLowerCase();
+        const isLow  = rl.includes("низк");
+        const isHigh = rl.includes("высок") || rl.includes("висок");
+        const color  = isLow ? "#22c55e" : isHigh ? "#ef4444" : "#f59e0b";
+        const bg     = isLow ? "rgba(34,197,94,0.08)"   : isHigh ? "rgba(239,68,68,0.08)"   : "rgba(245,158,11,0.08)";
+        const border = isLow ? "rgba(34,197,94,0.2)"    : isHigh ? "rgba(239,68,68,0.2)"    : "rgba(245,158,11,0.2)";
+        const icon   = isLow ? "🟢" : isHigh ? "🔴" : "🟡";
+        const label  = isLow ? "Низкий риск" : isHigh ? "Высокий риск" : "Средний риск";
+        return (
+          <div className="mx-4 mb-3 flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: bg, border: `1px solid ${border}` }}>
+            <span className="text-[11px]">{icon}</span>
+            <span className="font-mono text-[10px] font-bold uppercase tracking-wider" style={{ color }}>{label}</span>
+          </div>
+        );
+      })()}
 
       {/* ── Analysis / Reasoning ── */}
       {isAi && "analysis" in aiPred && aiPred.analysis && (
