@@ -35,7 +35,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
 
-if (process.env.NODE_ENV === "production") {
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const staticDir = path.resolve(__dirname, "../../football-analytics/dist/public");
   app.use(express.static(staticDir));
   app.get("*", (_req, res) => {
