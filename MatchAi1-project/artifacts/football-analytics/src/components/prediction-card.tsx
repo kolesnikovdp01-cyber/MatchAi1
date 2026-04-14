@@ -312,24 +312,6 @@ export function PredictionCard({ prediction, type }: PredictionCardProps) {
         </div>
       </div>
 
-      {/* ── Risk Level Badge (AI only) ── */}
-      {isAi && riskLevel && (() => {
-        const rl = riskLevel.toLowerCase();
-        const isLow  = rl.includes("низк");
-        const isHigh = rl.includes("высок") || rl.includes("висок");
-        const color  = isLow ? "#22c55e" : isHigh ? "#ef4444" : "#f59e0b";
-        const bg     = isLow ? "rgba(34,197,94,0.08)"   : isHigh ? "rgba(239,68,68,0.08)"   : "rgba(245,158,11,0.08)";
-        const border = isLow ? "rgba(34,197,94,0.2)"    : isHigh ? "rgba(239,68,68,0.2)"    : "rgba(245,158,11,0.2)";
-        const icon   = isLow ? "🟢" : isHigh ? "🔴" : "🟡";
-        const label  = isLow ? "Низкий риск" : isHigh ? "Высокий риск" : "Средний риск";
-        return (
-          <div className="mx-4 mb-3 flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: bg, border: `1px solid ${border}` }}>
-            <span className="text-[11px]">{icon}</span>
-            <span className="font-mono text-[10px] font-bold uppercase tracking-wider" style={{ color }}>{label}</span>
-          </div>
-        );
-      })()}
-
       {/* ── Analysis / Reasoning ── */}
       {isAi && "analysis" in aiPred && aiPred.analysis && (
         <div className="px-4 pb-3 pt-0">
