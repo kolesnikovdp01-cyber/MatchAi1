@@ -1154,9 +1154,6 @@ function AdsAdminTab({ adminId }: { adminId: string }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ title: "", description: "", imageUrl: "", mediaType: "image", linkUrl: "", rewardCoins: "5", durationSeconds: "15" });
   const [saving, setSaving] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
-  const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const { toast } = useToast();
 
   const fetchAds = useCallback(async () => {
@@ -1168,59 +1165,6 @@ function AdsAdminTab({ adminId }: { adminId: string }) {
   }, [adminId]);
 
   useEffect(() => { fetchAds(); }, [fetchAds]);
-
-  async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const isVideo = file.type.startsWith("video/");
-    const isImage = file.type.startsWith("image/");
-    if (!isVideo && !isImage) {
-      toast({ title: "Только изображения и видео", variant: "destructive" });
-      return;
-    }
-
-    // Local preview
-    const objectUrl = URL.createObjectURL(file);
-    setMediaPreview(objectUrl);
-    setForm(f => ({ ...f, mediaType: isVideo ? "video" : "image" }));
-
-    // Upload to object storage
-    setUploading(true);
-    setUploadProgress(0);
-    try {
-      // Step 1: get presigned URL
-      const urlRes = await fetch(apiUrl("/storage/uploads/request-url"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: file.name, size: file.size, contentType: file.type }),
-      });
-      if (!urlRes.ok) throw new Error("Не удалось получить URL для загрузки");
-      const { uploadURL, objectPath } = await urlRes.json();
-
-      // Step 2: upload directly to GCS with XHR for progress
-      await new Promise<void>((resolve, reject) => {
-        const xhr = new XMLHttpRequest();
-        xhr.upload.onprogress = (e) => {
-          if (e.lengthComputable) setUploadProgress(Math.round((e.loaded / e.total) * 100));
-        };
-        xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error("Ошибка загрузки")));
-        xhr.onerror = () => reject(new Error("Ошибка сети"));
-        xhr.open("PUT", uploadURL);
-        xhr.setRequestHeader("Content-Type", file.type);
-        xhr.send(file);
-      });
-
-      setForm(f => ({ ...f, imageUrl: objectPath }));
-      toast({ title: isVideo ? "Видео загружено ✓" : "Изображение загружено ✓" });
-    } catch (err: any) {
-      toast({ title: err.message, variant: "destructive" });
-      setMediaPreview(null);
-    } finally {
-      setUploading(false);
-      setUploadProgress(0);
-    }
-  }
 
   async function createAd() {
     if (!form.title || !form.linkUrl) { toast({ title: "Заполни название и ссылку", variant: "destructive" }); return; }
@@ -1275,33 +1219,23 @@ function AdsAdminTab({ adminId }: { adminId: string }) {
             className="h-9 text-sm bg-black/30 border-white/10 text-white placeholder:text-white/20" />
           <Input placeholder="Описание (необязательно)" value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
             className="h-9 text-sm bg-black/30 border-white/10 text-white placeholder:text-white/20" />
-          {/* Media upload */}
+          {/* Media URL */}
           <div>
-            <Label className="text-white/40 text-[10px] font-mono uppercase">Медиа (фото или видео)</Label>
-            <label className="mt-1 flex items-center gap-3 cursor-pointer rounded-lg border border-dashed border-white/10 px-3 py-2.5 hover:border-amber-500/30 transition-colors" style={{ background: "rgba(0,0,0,0.3)" }}>
-              <input type="file" accept="image/*,video/*" className="hidden" onChange={handleFileSelect} disabled={uploading} />
-              {uploading ? (
-                <div className="flex-1 space-y-1">
-                  <div className="flex justify-between text-xs font-mono text-white/50">
-                    <span>Загрузка...</span><span>{uploadProgress}%</span>
-                  </div>
-                  <div className="w-full h-1 bg-white/10 rounded-full">
-                    <div className="h-full bg-amber-400 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
-                  </div>
-                </div>
-              ) : mediaPreview ? (
-                <div className="flex items-center gap-2 flex-1 min-w-0">
-                  {form.mediaType === "video" ? (
-                    <video src={mediaPreview} className="h-10 w-16 rounded object-cover shrink-0" muted />
-                  ) : (
-                    <img src={mediaPreview} className="h-10 w-16 rounded object-cover shrink-0" />
-                  )}
-                  <span className="text-xs text-white/50 font-mono truncate">{form.mediaType === "video" ? "Видео загружено ✓" : "Фото загружено ✓"}</span>
-                </div>
-              ) : (
-                <span className="text-xs text-white/30 font-mono">Нажми чтобы выбрать фото или видео</span>
-              )}
-            </label>
+            <Label className="text-white/40 text-[10px] font-mono uppercase">URL медиа (фото или видео)</Label>
+            <Input placeholder="https://example.com/image.jpg" value={form.imageUrl} onChange={e => setForm(f => ({ ...f, imageUrl: e.target.value }))}
+              className="mt-1 h-9 text-sm bg-black/30 border-white/10 text-white placeholder:text-white/20" />
+          </div>
+          <div>
+            <Label className="text-white/40 text-[10px] font-mono uppercase">Тип медиа</Label>
+            <Select value={form.mediaType} onValueChange={v => setForm(f => ({ ...f, mediaType: v }))}>
+              <SelectTrigger className="mt-1 h-9 text-xs bg-black/30 border-white/10 text-white">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="image">Изображение</SelectItem>
+                <SelectItem value="video">Видео</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
           <Input placeholder="Ссылка объявления (обязательно)" value={form.linkUrl} onChange={e => setForm(f => ({ ...f, linkUrl: e.target.value }))}
             className="h-9 text-sm bg-black/30 border-white/10 text-white placeholder:text-white/20" />
