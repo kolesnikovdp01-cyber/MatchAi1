@@ -1,11 +1,14 @@
 {
   "version": 2,
-  "buildCommand": "npm install -g pnpm && pnpm install && BASE_PATH=/ pnpm --filter @workspace/football-analytics run build && pnpm --filter @workspace/api-server run build",
+  "installCommand": "npm install -g pnpm@10 && pnpm install --no-frozen-lockfile",
+  "buildCommand": "node artifacts/api-server/build.vercel.mjs && BASE_PATH=/ pnpm --filter @workspace/football-analytics run build",
   "outputDirectory": "artifacts/football-analytics/dist/public",
   "rewrites": [
-    {
-      "source": "/api/:path*",
-      "destination": "/api"
-    }
-  ]
+    { "source": "/api/:path*", "destination": "/api/index" }
+  ],
+  "env": {
+    "NODE_ENV": "production",
+    "BASE_PATH": "/",
+    "VERCEL": "1"
+  }
 }
