@@ -542,43 +542,138 @@ export const translations = {
 // League name translations
 export const leagueTranslations: Record<string, Record<Lang, string>> = {
   "La Liga": { ru: "Ла Лига", uk: "Ла Ліга", en: "La Liga" },
+  "La Liga ": { ru: "Ла Лига", uk: "Ла Ліга", en: "La Liga" },
   "Premier League": { ru: "Премьер-лига", uk: "Прем'єр-ліга", en: "Premier League" },
+  "English Premier League": { ru: "Премьер-лига", uk: "Прем'єр-ліга", en: "Premier League" },
   "Bundesliga": { ru: "Бундеслига", uk: "Бундесліга", en: "Bundesliga" },
+  "1. Bundesliga": { ru: "Бундеслига", uk: "Бундесліга", en: "Bundesliga" },
   "Ligue 1": { ru: "Лига 1", uk: "Ліга 1", en: "Ligue 1" },
   "Serie A": { ru: "Серия А", uk: "Серія А", en: "Serie A" },
   "Eredivisie": { ru: "Эредивизи", uk: "Ередивізі", en: "Eredivisie" },
   "Liga Portugal": { ru: "Лига Португалии", uk: "Ліга Португалії", en: "Liga Portugal" },
+  "Primeira Liga": { ru: "Лига Португалии", uk: "Ліга Португалії", en: "Primeira Liga" },
   "Champions League": { ru: "Лига чемпионов", uk: "Ліга чемпіонів", en: "Champions League" },
+  "UEFA Champions League": { ru: "Лига чемпионов", uk: "Ліга чемпіонів", en: "UEFA Champions League" },
   "Europa League": { ru: "Лига Европы", uk: "Ліга Європи", en: "Europa League" },
-  "La Liga ": { ru: "Ла Лига", uk: "Ла Ліга", en: "La Liga" },
+  "UEFA Europa League": { ru: "Лига Европы", uk: "Ліга Європи", en: "UEFA Europa League" },
+  "Europa Conference League": { ru: "Лига конференций", uk: "Ліга конференцій", en: "Europa Conference League" },
+  "UEFA Europa Conference League": { ru: "Лига конференций", uk: "Ліга конференцій", en: "UEFA Europa Conference League" },
+  "Scottish Premiership": { ru: "Шотландия. Премьершип", uk: "Шотландія. Преміершип", en: "Scottish Premiership" },
+  "Ekstraklasa": { ru: "Польша. Экстракласа", uk: "Польща. Екстракляса", en: "Ekstraklasa" },
 };
 
 // Team name translations
 export const teamTranslations: Record<string, Record<Lang, string>> = {
+  // Real Madrid
   "Real Madrid": { ru: "Реал Мадрид", uk: "Реал Мадрид", en: "Real Madrid" },
+  // Barcelona
   "Barcelona": { ru: "Барселона", uk: "Барселона", en: "Barcelona" },
+  "FC Barcelona": { ru: "Барселона", uk: "Барселона", en: "Barcelona" },
+  // Manchester City
   "Manchester City": { ru: "Манчестер Сити", uk: "Манчестер Сіті", en: "Manchester City" },
+  // Liverpool
   "Liverpool": { ru: "Ливерпуль", uk: "Ліверпуль", en: "Liverpool" },
+  "Liverpool FC": { ru: "Ливерпуль", uk: "Ліверпуль", en: "Liverpool" },
+  // Bayern
   "Bayern Munich": { ru: "Бавария", uk: "Баварія", en: "Bayern Munich" },
+  "FC Bayern München": { ru: "Бавария", uk: "Баварія", en: "Bayern Munich" },
+  "Bayern München": { ru: "Бавария", uk: "Баварія", en: "Bayern Munich" },
+  // Dortmund
   "Dortmund": { ru: "Боруссия Дортмунд", uk: "Боруссія Дортмунд", en: "Dortmund" },
   "Borussia Dortmund": { ru: "Боруссия Дортмунд", uk: "Боруссія Дортмунд", en: "Borussia Dortmund" },
+  // PSG — API returns full name
   "PSG": { ru: "ПСЖ", uk: "ПСЖ", en: "PSG" },
+  "Paris Saint Germain": { ru: "ПСЖ", uk: "ПСЖ", en: "PSG" },
+  "Paris Saint-Germain": { ru: "ПСЖ", uk: "ПСЖ", en: "PSG" },
+  "Paris SG": { ru: "ПСЖ", uk: "ПСЖ", en: "PSG" },
+  // Marseille
   "Marseille": { ru: "Марсель", uk: "Марсель", en: "Marseille" },
+  "Olympique Marseille": { ru: "Марсель", uk: "Марсель", en: "Marseille" },
+  "Olympique de Marseille": { ru: "Марсель", uk: "Марсель", en: "Marseille" },
+  // Juventus
   "Juventus": { ru: "Ювентус", uk: "Ювентус", en: "Juventus" },
+  // Milan
   "AC Milan": { ru: "Милан", uk: "Мілан", en: "AC Milan" },
+  "Milan": { ru: "Милан", uk: "Мілан", en: "AC Milan" },
+  // Arsenal
   "Arsenal": { ru: "Арсенал", uk: "Арсенал", en: "Arsenal" },
+  // Chelsea
   "Chelsea": { ru: "Челси", uk: "Челсі", en: "Chelsea" },
+  // Inter
   "Inter Milan": { ru: "Интер", uk: "Інтер", en: "Inter Milan" },
+  "Inter": { ru: "Интер", uk: "Інтер", en: "Inter Milan" },
+  "FC Internazionale": { ru: "Интер", uk: "Інтер", en: "Inter Milan" },
+  "Internazionale": { ru: "Интер", uk: "Інтер", en: "Inter Milan" },
+  // Napoli
   "Napoli": { ru: "Наполи", uk: "Наполі", en: "Napoli" },
+  "SSC Napoli": { ru: "Наполи", uk: "Наполі", en: "Napoli" },
+  // Atletico
   "Atletico Madrid": { ru: "Атлетико Мадрид", uk: "Атлетіко Мадрид", en: "Atletico Madrid" },
+  "Atlético Madrid": { ru: "Атлетико Мадрид", uk: "Атлетіко Мадрид", en: "Atletico Madrid" },
+  "Atletico de Madrid": { ru: "Атлетико Мадрид", uk: "Атлетіко Мадрид", en: "Atletico Madrid" },
+  // Sevilla
   "Sevilla": { ru: "Севилья", uk: "Севілья", en: "Sevilla" },
+  "Sevilla FC": { ru: "Севилья", uk: "Севілья", en: "Sevilla" },
+  // Ajax
   "Ajax": { ru: "Аякс", uk: "Аякс", en: "Ajax" },
+  "AFC Ajax": { ru: "Аякс", uk: "Аякс", en: "Ajax" },
+  // PSV
   "PSV": { ru: "ПСВ", uk: "ПСВ", en: "PSV" },
+  "PSV Eindhoven": { ru: "ПСВ Эйндховен", uk: "ПСВ Ейндговен", en: "PSV Eindhoven" },
+  // Porto
   "Porto": { ru: "Порту", uk: "Порту", en: "Porto" },
+  "FC Porto": { ru: "Порту", uk: "Порту", en: "Porto" },
+  // Benfica
   "Benfica": { ru: "Бенфика", uk: "Бенфіка", en: "Benfica" },
+  "SL Benfica": { ru: "Бенфика", uk: "Бенфіка", en: "Benfica" },
+  // RB Leipzig
   "RB Leipzig": { ru: "РБ Лейпциг", uk: "РБ Лейпціг", en: "RB Leipzig" },
+  // Lyon
   "Lyon": { ru: "Лион", uk: "Ліон", en: "Lyon" },
+  "Olympique Lyonnais": { ru: "Лион", uk: "Ліон", en: "Lyon" },
+  // Monaco
   "Monaco": { ru: "Монако", uk: "Монако", en: "Monaco" },
+  "AS Monaco": { ru: "Монако", uk: "Монако", en: "Monaco" },
+  // Manchester United
+  "Manchester United": { ru: "Манчестер Юнайтед", uk: "Манчестер Юнайтед", en: "Manchester United" },
+  // Tottenham
+  "Tottenham": { ru: "Тоттенхэм", uk: "Тоттенхем", en: "Tottenham" },
+  "Tottenham Hotspur": { ru: "Тоттенхэм", uk: "Тоттенхем", en: "Tottenham" },
+  // Aston Villa
+  "Aston Villa": { ru: "Астон Вилла", uk: "Астон Вілла", en: "Aston Villa" },
+  // Newcastle
+  "Newcastle": { ru: "Ньюкасл", uk: "Ньюкасл", en: "Newcastle" },
+  "Newcastle United": { ru: "Ньюкасл", uk: "Ньюкасл", en: "Newcastle" },
+  // Leverkusen
+  "Bayer Leverkusen": { ru: "Байер Леверкузен", uk: "Баєр Леверкузен", en: "Bayer Leverkusen" },
+  "Leverkusen": { ru: "Леверкузен", uk: "Леверкузен", en: "Leverkusen" },
+  // Celtic / Rangers
+  "Celtic": { ru: "Селтик", uk: "Селтік", en: "Celtic" },
+  "Rangers": { ru: "Рейнджерс", uk: "Рейнджерс", en: "Rangers" },
+  // Fiorentina
+  "Fiorentina": { ru: "Фиорентина", uk: "Фіорентіна", en: "Fiorentina" },
+  // Roma
+  "Roma": { ru: "Рома", uk: "Рома", en: "Roma" },
+  "AS Roma": { ru: "Рома", uk: "Рома", en: "Roma" },
+  // Lazio
+  "Lazio": { ru: "Лацио", uk: "Лаціо", en: "Lazio" },
+  "SS Lazio": { ru: "Лацио", uk: "Лаціо", en: "Lazio" },
+  // Villarreal
+  "Villarreal": { ru: "Вильяреал", uk: "Вільяреал", en: "Villarreal" },
+  // Athletic Club / Bilbao
+  "Athletic Club": { ru: "Атлетик Бильбао", uk: "Атлетік Більбао", en: "Athletic Club" },
+  "Athletic Bilbao": { ru: "Атлетик Бильбао", uk: "Атлетік Більбао", en: "Athletic Bilbao" },
+  // Valencia
+  "Valencia": { ru: "Валенсия", uk: "Валенсія", en: "Valencia" },
+  "Valencia CF": { ru: "Валенсия", uk: "Валенсія", en: "Valencia" },
+  // Betis
+  "Real Betis": { ru: "Бетис", uk: "Бетіс", en: "Real Betis" },
+  // Eintracht Frankfurt
+  "Eintracht Frankfurt": { ru: "Айнтрахт Франкфурт", uk: "Айнтрахт Франкфурт", en: "Eintracht Frankfurt" },
+  "Frankfurt": { ru: "Франкфурт", uk: "Франкфурт", en: "Frankfurt" },
+  // Stuttgart
+  "Stuttgart": { ru: "Штутгарт", uk: "Штутгарт", en: "Stuttgart" },
+  "VfB Stuttgart": { ru: "Штутгарт", uk: "Штутгарт", en: "Stuttgart" },
 };
 
 export function translateLeague(league: string, lang: Lang): string {
