@@ -3,14 +3,16 @@ import { logger } from "./lib/logger";
 import { startupFetch } from "./services/stats-fetcher";
 import { startDailyScheduler } from "./services/auto-scheduler";
 
-const rawPort = process.env["PORT"];
+// Prevent unhandled rejections from crashing the process
+process.on("unhandledRejection", (reason) => {
+  logger.warn({ reason }, "Unhandled promise rejection (ignored)");
+});
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+process.on("uncaughtException", (err) => {
+  logger.warn({ err }, "Uncaught exception (ignored)");
+});
 
+const rawPort = process.env["PORT"] ?? "3000";
 const port = Number(rawPort);
 
 if (Number.isNaN(port) || port <= 0) {
@@ -28,6 +30,10 @@ app.listen(port, (err) => {
   // Startup: detect season, then start daily auto-scheduler
   setTimeout(() => {
     startupFetch().catch((e) => logger.warn({ err: e }, "stats startup fetch failed"));
-    startDailyScheduler();
+    try {
+      startDailyScheduler();
+    } catch (e) {
+      logger.warn({ err: e }, "auto-scheduler start failed");
+    }
   }, 3000);
 });
