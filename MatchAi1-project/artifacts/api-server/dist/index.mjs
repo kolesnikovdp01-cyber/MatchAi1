@@ -72326,6 +72326,7 @@ ${lines.join("\n")}`);
         console.warn("[stats] away form error:", e2.message);
       }
     }
+    let bookmakerOdds2;
     if (resolvedFixtureId) {
       try {
         const oddsData = await fetchOdds(resolvedFixtureId);
@@ -72333,6 +72334,7 @@ ${lines.join("\n")}`);
           const bookmaker = oddsData[0];
           const bets = bookmaker?.bookmakers?.[0]?.bets ?? bookmaker?.bets ?? [];
           const oddsLines = [];
+          const structured = {};
           for (const bet of bets) {
             const name = bet.name ?? "";
             const vals = bet.values ?? [];
@@ -72346,8 +72348,23 @@ ${lines.join("\n")}`);
               const u25 = vals.find((v2) => v2.value === "Under 2.5")?.odd;
               const o15 = vals.find((v2) => v2.value === "Over 1.5")?.odd;
               const u15 = vals.find((v2) => v2.value === "Under 1.5")?.odd;
-              if (o25 && u25) oddsLines.push(`  \u0422\u04112.5/\u0422\u041C2.5: ${o25} / ${u25}`);
-              if (o15 && u15) oddsLines.push(`  \u0422\u04111.5/\u0422\u041C1.5: ${o15} / ${u15}`);
+              const o35 = vals.find((v2) => v2.value === "Over 3.5")?.odd;
+              const u35 = vals.find((v2) => v2.value === "Under 3.5")?.odd;
+              if (o25 && u25) {
+                oddsLines.push(`  \u0422\u04112.5/\u0422\u041C2.5: ${o25} / ${u25}`);
+                structured.tb25 = parseFloat(o25);
+                structured.tm25 = parseFloat(u25);
+              }
+              if (o15 && u15) {
+                oddsLines.push(`  \u0422\u04111.5/\u0422\u041C1.5: ${o15} / ${u15}`);
+                structured.tb15 = parseFloat(o15);
+                structured.tm15 = parseFloat(u15);
+              }
+              if (o35 && u35) {
+                oddsLines.push(`  \u0422\u04113.5/\u0422\u041C3.5: ${o35} / ${u35}`);
+                structured.tb35 = parseFloat(o35);
+                structured.tm35 = parseFloat(u35);
+              }
             } else if (/both teams score/i.test(name)) {
               const yes = vals.find((v2) => v2.value === "Yes")?.odd;
               const no = vals.find((v2) => v2.value === "No")?.odd;
@@ -72355,13 +72372,24 @@ ${lines.join("\n")}`);
             } else if (/corners/i.test(name)) {
               const o95 = vals.find((v2) => v2.value === "Over 9.5")?.odd;
               const u95 = vals.find((v2) => v2.value === "Under 9.5")?.odd;
-              if (o95 && u95) oddsLines.push(`  \u0423\u0433\u043B\u043E\u0432\u044B\u0435 \u0422\u04119.5/\u0422\u041C9.5: ${o95} / ${u95}`);
+              const o85 = vals.find((v2) => v2.value === "Over 8.5")?.odd;
+              const u85 = vals.find((v2) => v2.value === "Under 8.5")?.odd;
+              if (o95 && u95) {
+                oddsLines.push(`  \u0423\u0433\u043B\u043E\u0432\u044B\u0435 \u0422\u04119.5/\u0422\u041C9.5: ${o95} / ${u95}`);
+                structured.cornersOver95 = parseFloat(o95);
+                structured.cornersUnder95 = parseFloat(u95);
+              }
+              if (o85 && u85) {
+                structured.cornersOver85 = parseFloat(o85);
+                structured.cornersUnder85 = parseFloat(u85);
+              }
             }
           }
           if (oddsLines.length > 0) {
-            parts.push(`\u{1F4B0} \u0411\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u044B:
+            parts.push(`\u{1F4B0} \u0411\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u044B (\u0440\u0435\u0430\u043B\u044C\u043D\u044B\u0435 \u041A\u0424):
 ${oddsLines.join("\n")}`);
           }
+          if (Object.keys(structured).length > 0) bookmakerOdds2 = structured;
         }
       } catch (e2) {
         console.warn("[stats] odds error:", e2.message);
@@ -72398,7 +72426,8 @@ ${oddsLines.join("\n")}`);
     awayTeamId,
     leagueId,
     statsText: parts.join("\n"),
-    requestsUsed
+    requestsUsed,
+    bookmakerOdds
   };
 }
 async function getApiUsage() {
@@ -72454,7 +72483,8 @@ var SYSTEM_PROMPT = `\u0422\u044B \u2014 \u041F\u0440\u043E\u0444\u0435\u0441\u0
 \u2022 \u041A\u0424 < 1.65 \u043D\u0430 \u0441\u043E\u0431\u044B\u0442\u0438\u0435 = \u0440\u044B\u043D\u043E\u043A \u043E\u0447\u0435\u043D\u044C \u0443\u0432\u0435\u0440\u0435\u043D \u2192 \u044D\u0442\u043E \u0441\u0438\u043B\u044C\u043D\u043E\u0435 \u043F\u043E\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0435\u043D\u0438\u0435
 \u2022 \u041A\u0424 1.70\u20131.90 = \u0443\u043C\u0435\u0440\u0435\u043D\u043D\u0430\u044F \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C
 \u2022 \u041A\u0424 > 2.00 = \u0440\u0438\u0441\u043A, \u0438\u0437\u0431\u0435\u0433\u0430\u0439 \u044D\u0442\u043E\u0442 \u0440\u044B\u043D\u043E\u043A
-\u2022 \u041D\u0415 \u041A\u041E\u041F\u0418\u0420\u0423\u0419 \u041A\u0424 \u0438\u0437 \u0434\u0430\u043D\u043D\u044B\u0445 \u2014 \u043D\u0430\u043F\u0438\u0448\u0438 \u0441\u0432\u043E\u0439 \u0440\u0435\u0430\u043B\u0438\u0441\u0442\u0438\u0447\u043D\u044B\u0439 \u0440\u0430\u0441\u0447\u0451\u0442 (1.45\u20131.90)
+\u2022 \u0418\u0421\u041F\u041E\u041B\u042C\u0417\u0423\u0419 \u0420\u0415\u0410\u041B\u042C\u041D\u042B\u0419 \u041A\u0424 \u0438\u0437 \u0434\u0430\u043D\u043D\u044B\u0445 \xAB\u0411\u0443\u043A\u043C\u0435\u043A\u0435\u0440\u044B\xBB \u0434\u043B\u044F \u0432\u044B\u0431\u0440\u0430\u043D\u043D\u043E\u0433\u043E \u0440\u044B\u043D\u043A\u0430 \u2014 \u0443\u043A\u0430\u0436\u0438 \u0435\u0433\u043E \u0432 \u043F\u043E\u043B\u0435 odds
+\u2022 \u0415\u0441\u043B\u0438 \u0440\u0435\u0430\u043B\u044C\u043D\u044B\u0445 \u041A\u0424 \u043D\u0435\u0442 \u0432 \u0434\u0430\u043D\u043D\u044B\u0445 \u2014 \u0440\u0430\u0441\u0441\u0447\u0438\u0442\u0430\u0439 \u0441\u0430\u043C (\u0434\u0438\u0430\u043F\u0430\u0437\u043E\u043D 1.45\u20131.90)
 
 \u0428\u0410\u0413 4 \u2014 \u0412\u042B\u0411\u041E\u0420 \u0420\u042B\u041D\u041A\u0410
 \u0412\u044B\u0431\u0435\u0440\u0438 \u041E\u0414\u0418\u041D \u0440\u044B\u043D\u043E\u043A \u0441 \u043C\u0430\u043A\u0441\u0438\u043C\u0430\u043B\u044C\u043D\u043E\u0439 \u0443\u0432\u0435\u0440\u0435\u043D\u043D\u043E\u0441\u0442\u044C\u044E (\u043D\u0435 \u043D\u0435\u0441\u043A\u043E\u043B\u044C\u043A\u043E):
@@ -72514,6 +72544,21 @@ analysis: \u0420\u041E\u0412\u041D\u041E 4 \u043F\u0440\u0435\u0434\u043B\u043E\
 \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
 \u041F\u0440\u043E\u0433\u043D\u043E\u0437: {"prediction":"\u0422\u041C 2.5","confidence":0.83,"scorePredict":"1:0","scoreProbability":0.18,"analysis":"...","odds":1.68}
 Skip:    {"skip":true,"reason":"\u041C\u0430\u0442\u0447 \u0438\u0434\u0451\u0442 \u0432 \u043F\u0440\u044F\u043C\u043E\u043C \u044D\u0444\u0438\u0440\u0435"}`;
+function realOddsForMarket(prediction, bm) {
+  if (!bm) return null;
+  const p2 = prediction.toLowerCase().replace(/\s+/g, "");
+  if (/тб2\.5/.test(p2) && bm.tb25 && bm.tb25 >= 1.3 && bm.tb25 <= 2.2) return bm.tb25;
+  if (/тм2\.5/.test(p2) && bm.tm25 && bm.tm25 >= 1.3 && bm.tm25 <= 2.2) return bm.tm25;
+  if (/тб1\.5/.test(p2) && bm.tb15 && bm.tb15 >= 1.1 && bm.tb15 <= 2.2) return bm.tb15;
+  if (/тм1\.5/.test(p2) && bm.tm15 && bm.tm15 >= 1.1 && bm.tm15 <= 2.2) return bm.tm15;
+  if (/тб3\.5/.test(p2) && bm.tb35 && bm.tb35 >= 1.3 && bm.tb35 <= 2.2) return bm.tb35;
+  if (/тм3\.5/.test(p2) && bm.tm35 && bm.tm35 >= 1.3 && bm.tm35 <= 2.2) return bm.tm35;
+  if (/тбугловых9\.5|угловыхтб9\.5/.test(p2) && bm.cornersOver95) return bm.cornersOver95;
+  if (/тмугловых9\.5|угловыхтм9\.5/.test(p2) && bm.cornersUnder95) return bm.cornersUnder95;
+  if (/тбугловых8\.5|угловыхтб8\.5/.test(p2) && bm.cornersOver85) return bm.cornersOver85;
+  if (/тмугловых8\.5|угловыхтм8\.5/.test(p2) && bm.cornersUnder85) return bm.cornersUnder85;
+  return null;
+}
 function sanitizeScore(prediction, score) {
   if (!score) return null;
   const parts = score.split(":").map(Number);
@@ -72596,11 +72641,14 @@ ${hasRealStats ? stats.statsText : `\u26A0\uFE0F \u0414\u0430\u043D\u043D\u044B\
     const prediction = (parsed.prediction ?? "").toString().trim();
     const confidence = Math.min(0.95, Math.max(0.6, Number(parsed.confidence) || 0.75));
     const analysis = (parsed.analysis ?? "").toString().trim();
-    const odds = Math.min(2.1, Math.max(1.3, Number(parsed.odds) || 1.65));
+    const aiOdds = Math.min(3.5, Math.max(1.1, Number(parsed.odds) || 1.65));
+    const realOdds = realOddsForMarket(prediction, stats.bookmakerOdds);
+    const odds = realOdds ?? aiOdds;
     const rawScore = (parsed.scorePredict ?? "").toString().trim();
     const scorePredict = sanitizeScore(prediction, rawScore);
     const scoreProbability = Math.min(0.35, Math.max(0.06, Number(parsed.scoreProbability) || 0.14));
     if (!prediction) throw new Error("Empty prediction from OpenAI");
+    console.log(`[gen] Odds: AI=${aiOdds}, Bookmaker=${realOdds ?? "n/a"}, Using=${odds}`);
     const [saved] = await db.insert(aiPredictionsTable).values({
       matchTitle: `${homeTeam} vs ${awayTeam}`,
       homeTeam,

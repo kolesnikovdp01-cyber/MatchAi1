@@ -234,6 +234,19 @@ function fmtMatch(m: any, teamId: number, label: string): string {
 
 // ─── Main: fetch rich stats for AI generation ─────────────────────────────────
 
+export interface BookmakerOdds {
+  tb25?: number;
+  tm25?: number;
+  tb15?: number;
+  tm15?: number;
+  tb35?: number;
+  tm35?: number;
+  cornersOver95?: number;
+  cornersUnder95?: number;
+  cornersOver85?: number;
+  cornersUnder85?: number;
+}
+
 export interface MatchStats {
   fixtureId?: number;
   homeTeamId?: number;
@@ -241,6 +254,7 @@ export interface MatchStats {
   leagueId?: number;
   statsText: string;
   requestsUsed: number;
+  bookmakerOdds?: BookmakerOdds;
 }
 
 export async function fetchStatsForMatch(
@@ -429,6 +443,7 @@ export async function fetchStatsForMatch(
     }
 
     // 10. Bookmaker odds
+    let bookmakerOdds: BookmakerOdds | undefined;
     if (resolvedFixtureId) {
       try {
         const oddsData = await fetchOdds(resolvedFixtureId);
@@ -436,6 +451,7 @@ export async function fetchStatsForMatch(
           const bookmaker = oddsData[0];
           const bets: any[] = bookmaker?.bookmakers?.[0]?.bets ?? bookmaker?.bets ?? [];
           const oddsLines: string[] = [];
+          const structured: BookmakerOdds = {};
           for (const bet of bets) {
             const name: string = bet.name ?? "";
             const vals: any[] = bet.values ?? [];
@@ -449,8 +465,11 @@ export async function fetchStatsForMatch(
               const u25 = vals.find((v: any) => v.value === "Under 2.5")?.odd;
               const o15 = vals.find((v: any) => v.value === "Over 1.5")?.odd;
               const u15 = vals.find((v: any) => v.value === "Under 1.5")?.odd;
-              if (o25 && u25) oddsLines.push(`  ТБ2.5/ТМ2.5: ${o25} / ${u25}`);
-              if (o15 && u15) oddsLines.push(`  ТБ1.5/ТМ1.5: ${o15} / ${u15}`);
+              const o35 = vals.find((v: any) => v.value === "Over 3.5")?.odd;
+              const u35 = vals.find((v: any) => v.value === "Under 3.5")?.odd;
+              if (o25 && u25) { oddsLines.push(`  ТБ2.5/ТМ2.5: ${o25} / ${u25}`); structured.tb25 = parseFloat(o25); structured.tm25 = parseFloat(u25); }
+              if (o15 && u15) { oddsLines.push(`  ТБ1.5/ТМ1.5: ${o15} / ${u15}`); structured.tb15 = parseFloat(o15); structured.tm15 = parseFloat(u15); }
+              if (o35 && u35) { oddsLines.push(`  ТБ3.5/ТМ3.5: ${o35} / ${u35}`); structured.tb35 = parseFloat(o35); structured.tm35 = parseFloat(u35); }
             } else if (/both teams score/i.test(name)) {
               const yes = vals.find((v: any) => v.value === "Yes")?.odd;
               const no = vals.find((v: any) => v.value === "No")?.odd;
@@ -458,12 +477,16 @@ export async function fetchStatsForMatch(
             } else if (/corners/i.test(name)) {
               const o95 = vals.find((v: any) => v.value === "Over 9.5")?.odd;
               const u95 = vals.find((v: any) => v.value === "Under 9.5")?.odd;
-              if (o95 && u95) oddsLines.push(`  Угловые ТБ9.5/ТМ9.5: ${o95} / ${u95}`);
+              const o85 = vals.find((v: any) => v.value === "Over 8.5")?.odd;
+              const u85 = vals.find((v: any) => v.value === "Under 8.5")?.odd;
+              if (o95 && u95) { oddsLines.push(`  Угловые ТБ9.5/ТМ9.5: ${o95} / ${u95}`); structured.cornersOver95 = parseFloat(o95); structured.cornersUnder95 = parseFloat(u95); }
+              if (o85 && u85) { structured.cornersOver85 = parseFloat(o85); structured.cornersUnder85 = parseFloat(u85); }
             }
           }
           if (oddsLines.length > 0) {
-            parts.push(`💰 Букмекеры:\n${oddsLines.join("\n")}`);
+            parts.push(`💰 Букмекеры (реальные КФ):\n${oddsLines.join("\n")}`);
           }
+          if (Object.keys(structured).length > 0) bookmakerOdds = structured;
         }
       } catch (e: any) { console.warn("[stats] odds error:", e.message); }
     }
@@ -501,6 +524,7 @@ export async function fetchStatsForMatch(
     leagueId,
     statsText: parts.join("\n"),
     requestsUsed,
+    bookmakerOdds,
   };
 }
 

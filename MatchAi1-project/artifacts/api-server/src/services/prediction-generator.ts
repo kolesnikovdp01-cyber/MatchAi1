@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { db, aiPredictionsTable } from "@workspace/db";
-import { fetchStatsForMatch } from "./stats-fetcher";
+import { fetchStatsForMatch, type BookmakerOdds } from "./stats-fetcher";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? "" });
 
@@ -35,7 +35,8 @@ const SYSTEM_PROMPT = `Ты — Профессор Матч, элитный фу
 • КФ < 1.65 на событие = рынок очень уверен → это сильное подтверждение
 • КФ 1.70–1.90 = умеренная уверенность
 • КФ > 2.00 = риск, избегай этот рынок
-• НЕ КОПИРУЙ КФ из данных — напиши свой реалистичный расчёт (1.45–1.90)
+• ИСПОЛЬЗУЙ РЕАЛЬНЫЙ КФ из данных «Букмекеры» для выбранного рынка — укажи его в поле odds
+• Если реальных КФ нет в данных — рассчитай сам (диапазон 1.45–1.90)
 
 ШАГ 4 — ВЫБОР РЫНКА
 Выбери ОДИН рынок с максимальной уверенностью (не несколько):
@@ -95,6 +96,24 @@ analysis: РОВНО 4 предложения по шаблону:
 ═══════════════════════════════════════════════
 Прогноз: {"prediction":"ТМ 2.5","confidence":0.83,"scorePredict":"1:0","scoreProbability":0.18,"analysis":"...","odds":1.68}
 Skip:    {"skip":true,"reason":"Матч идёт в прямом эфире"}`;
+
+// ─── Pick real bookmaker odds for chosen market ───────────────────────────────
+
+function realOddsForMarket(prediction: string, bm?: BookmakerOdds): number | null {
+  if (!bm) return null;
+  const p = prediction.toLowerCase().replace(/\s+/g, "");
+  if (/тб2\.5/.test(p) && bm.tb25 && bm.tb25 >= 1.30 && bm.tb25 <= 2.20) return bm.tb25;
+  if (/тм2\.5/.test(p) && bm.tm25 && bm.tm25 >= 1.30 && bm.tm25 <= 2.20) return bm.tm25;
+  if (/тб1\.5/.test(p) && bm.tb15 && bm.tb15 >= 1.10 && bm.tb15 <= 2.20) return bm.tb15;
+  if (/тм1\.5/.test(p) && bm.tm15 && bm.tm15 >= 1.10 && bm.tm15 <= 2.20) return bm.tm15;
+  if (/тб3\.5/.test(p) && bm.tb35 && bm.tb35 >= 1.30 && bm.tb35 <= 2.20) return bm.tb35;
+  if (/тм3\.5/.test(p) && bm.tm35 && bm.tm35 >= 1.30 && bm.tm35 <= 2.20) return bm.tm35;
+  if (/тбугловых9\.5|угловыхтб9\.5/.test(p) && bm.cornersOver95) return bm.cornersOver95;
+  if (/тмугловых9\.5|угловыхтм9\.5/.test(p) && bm.cornersUnder95) return bm.cornersUnder95;
+  if (/тбугловых8\.5|угловыхтб8\.5/.test(p) && bm.cornersOver85) return bm.cornersOver85;
+  if (/тмугловых8\.5|угловыхтм8\.5/.test(p) && bm.cornersUnder85) return bm.cornersUnder85;
+  return null;
+}
 
 // ─── Score sanity check ───────────────────────────────────────────────────────
 
@@ -209,12 +228,16 @@ ${hasRealStats
     const prediction = (parsed.prediction ?? "").toString().trim();
     const confidence = Math.min(0.95, Math.max(0.60, Number(parsed.confidence) || 0.75));
     const analysis = (parsed.analysis ?? "").toString().trim();
-    const odds = Math.min(2.10, Math.max(1.30, Number(parsed.odds) || 1.65));
+    const aiOdds = Math.min(3.50, Math.max(1.10, Number(parsed.odds) || 1.65));
+    // Use real bookmaker odds if available for the chosen market; fall back to AI estimate
+    const realOdds = realOddsForMarket(prediction, stats.bookmakerOdds);
+    const odds = realOdds ?? aiOdds;
     const rawScore = (parsed.scorePredict ?? "").toString().trim();
     const scorePredict = sanitizeScore(prediction, rawScore);
     const scoreProbability = Math.min(0.35, Math.max(0.06, Number(parsed.scoreProbability) || 0.14));
 
     if (!prediction) throw new Error("Empty prediction from OpenAI");
+    console.log(`[gen] Odds: AI=${aiOdds}, Bookmaker=${realOdds ?? "n/a"}, Using=${odds}`);
 
     // 4. Save to DB
     const [saved] = await db.insert(aiPredictionsTable).values({
